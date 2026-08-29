@@ -51,25 +51,25 @@ class SearchService:
 
         # 2. Fetch results via router
         # Fetch slightly more if post-filters are active
-        fetch_limit = max_results * 2 if (published_after or published_before) else max_results
+        fetch_limit = clean_max * 2 if (clean_after or clean_before) else clean_max
         raw_results = await self.router.search(
-            query=sanitized_query,
-            max_results=min(25, max(max_results, fetch_limit)),
-            language=language,
-            published_after=published_after,
-            published_before=published_before,
+            query=clean_query,
+            max_results=min(25, max(clean_max, fetch_limit)),
+            language=clean_lang,
+            published_after=clean_after,
+            published_before=clean_before,
         )
 
         # 3. Deterministic local post-filtering
         filtered = self._apply_post_filters(
             raw_results,
-            published_after=published_after,
-            published_before=published_before,
+            published_after=clean_after,
+            published_before=clean_before,
         )
 
-        final_results = filtered[:max_results]
+        final_results = filtered[:clean_max]
         resp = SearchResponse(
-            query=sanitized_query,
+            query=clean_query,
             total_results=len(final_results),
             results=final_results,
         )

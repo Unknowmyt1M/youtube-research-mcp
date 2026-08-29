@@ -39,6 +39,13 @@ async def server_lifespan(server: FastMCP):
     await router.close()
     logger.info("Closed provider HTTP connection pools.")
 
+    # Clean up cache connection pool
+    try:
+        await cache.close()
+        logger.info("Closed cache connection pool.")
+    except Exception:
+        pass
+
 
 def create_server() -> FastMCP:
     """Initialize FastMCP server and wire all tools, OpenAPI connector, and resources."""

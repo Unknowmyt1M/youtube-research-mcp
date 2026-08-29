@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     CACHE_BACKEND: Literal["sqlite", "memory", "redis"] = "sqlite"
     CACHE_DB_PATH: str = str(Path.home() / ".youtube_research_mcp" / "cache.db")
     REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_SOCKET_TIMEOUT: float = 5.0
+    REDIS_CONNECT_TIMEOUT: float = 5.0
+    REDIS_MAX_CONNECTIONS: int = 50
     CACHE_SCHEMA_VERSION: str = "v2"
     CACHE_TTL_SEARCH: int = 43200  # 12 hours
     CACHE_TTL_METADATA: int = 604800  # 7 days

@@ -8,6 +8,8 @@ from starlette.responses import JSONResponse, Response
 
 from youtube_research_mcp.cache import get_cache
 from youtube_research_mcp.cache.sqlite import SQLiteCache
+from youtube_research_mcp.cache.redis import RedisCache
+from youtube_research_mcp.cache.memory import MemoryCache
 from youtube_research_mcp.config import settings
 from youtube_research_mcp.providers.base import CircuitState, ProviderCapability
 from youtube_research_mcp.services.router import get_router
@@ -190,6 +192,50 @@ def register_admin_routes(mcp):
                             })
             except Exception as e:
                 return JSONResponse({"status": "error", "message": str(e)}, status_code=500, headers=cors)
+        elif isinstance(cache, RedisCache):
+            try:
+                client = await cache._get_client()
+                version = settings.CACHE_SCHEMA_VERSION
+                cursor = 0
+                scanned_keys = []
+                while len(scanned_keys) < 50:
+                    cursor, keys = await client.scan(cursor=cursor, match=f"{version}:*", count=50)
+                    scanned_keys.extend(keys)
+                    if cursor == 0:
+                        break
+                now = time.time()
+                for k in scanned_keys[:50]:
+                    raw = await client.get(k)
+                    ttl = await client.ttl(k)
+                    is_neg = False
+                    created_at = now
+                    if raw:
+                        try:
+                            payload = json.loads(raw)
+                            is_neg = bool(payload.get("is_negative", False))
+                            created_at = payload.get("created_at", now)
+                        except Exception:
+                            pass
+                    entries.append({
+                        "key": k,
+                        "is_negative": is_neg,
+                        "expires_in_seconds": max(0, ttl) if ttl and ttl > 0 else 0,
+                        "created_at": created_at,
+                        "size_bytes": len(raw.encode("utf-8")) if raw else 0,
+                    })
+            except Exception as e:
+                return JSONResponse({"status": "error", "message": f"Redis cache explorer error: {str(e)}"}, status_code=500, headers=cors)
+        elif isinstance(cache, MemoryCache):
+            now = time.time()
+            async with cache._lock:
+                for k, (val, is_neg, exp) in list(cache._store.items())[:50]:
+                    entries.append({
+                        "key": k,
+                        "is_negative": is_neg,
+                        "expires_in_seconds": max(0, int(exp - now)),
+                        "created_at": now,
+                        "size_bytes": len(str(val)),
+                    })
         return JSONResponse({"status": "success", "total": len(entries), "entries": entries}, headers=cors)
 
     # 5. Circuit Breakers Inspector & Reset
