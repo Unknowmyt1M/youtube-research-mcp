@@ -32,6 +32,11 @@ class SingleFlight:
         async with self._lock:
             if key in self._in_flight:
                 self._coalesced_count += 1
+                try:
+                    from youtube_research_mcp.utils.metrics import metrics
+                    metrics.record_coalesced_request()
+                except Exception:
+                    pass
                 fut = self._in_flight[key]
             else:
                 loop = asyncio.get_running_loop()

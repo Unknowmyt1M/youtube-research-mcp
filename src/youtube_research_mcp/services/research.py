@@ -18,14 +18,20 @@ from youtube_research_mcp.models.search import VideoSearchResult
 from youtube_research_mcp.services.retrieval import LexicalTfidfFallback, tokenize_multilingual
 from youtube_research_mcp.services.search import SearchService
 from youtube_research_mcp.services.transcripts import TranscriptService
+from youtube_research_mcp.utils.formatting import format_timestamp, make_timestamp_url
 from youtube_research_mcp.utils.metrics import metrics
 from youtube_research_mcp.utils.rate_limit import ConcurrencyLimiter
+from youtube_research_mcp.utils.validation import (
+    validate_date_filter,
+    validate_language_code,
+    validate_query,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class ResearchEngine:
-    """Multi-video research discovery, source diversity filtering, and cross-video evidence synthesis."""
+    """Multi-video autonomous research engine with channel diversity and consensus claim clustering."""
 
     def __init__(self):
         self.search_service = SearchService()
@@ -46,6 +52,13 @@ class ResearchEngine:
         published_before: Optional[str] = None,
     ) -> MultiVideoResearchResult:
         """Perform autonomous deep research across diverse candidate YouTube videos."""
+        clean_query = validate_query(query, max_length=settings.MAX_QUERY_LENGTH)
+        clean_lang = validate_language_code(language, default="en") or "en"
+        clean_fb = validate_language_code(fallback_language, default=None, allow_none=True)
+        clean_after = validate_date_filter(published_after)
+        clean_before = validate_date_filter(published_before)
+        clean_max_ch = max(1, min(5, int(max_videos_per_channel)))
+
         metrics.record_request("research")
 
         # 1. Determine strict video and quote limits based on depth
@@ -56,18 +69,18 @@ class ResearchEngine:
 
         # 2. Search candidate videos (fetch extra to allow diversity filtering)
         search_resp = await self.search_service.search(
-            query=query,
+            query=clean_query,
             max_results=min(25, target_video_count * 3),
-            language=language,
-            published_after=published_after,
-            published_before=published_before,
+            language=clean_lang,
+            published_after=clean_after,
+            published_before=clean_before,
         )
 
         # 3. Apply channel diversity filter
         diverse_candidates = self._apply_channel_diversity(
             search_resp.results,
             max_total=target_video_count,
-            max_per_channel=max_videos_per_channel,
+            max_per_channel=clean_max_ch,
         )
 
         if not diverse_candidates:

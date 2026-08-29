@@ -1,5 +1,6 @@
 from pathlib import Path
-from typing import Literal, Optional
+from typing import List, Literal, Optional, Union
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,11 +13,33 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Server settings
+    # Server & Transport settings
     MCP_SERVER_NAME: str = "youtube-research-mcp"
     LOG_LEVEL: str = "INFO"
     MAX_CONCURRENCY: int = 10
     REQUEST_TIMEOUT: float = 15.0
+
+    # Security & Admin Authentication (SEC-001)
+    ADMIN_API_KEY: Optional[str] = None  # If set, required for /api/admin/* endpoints
+
+    # CORS Configuration (SEC-002)
+    CORS_ALLOWED_ORIGINS: List[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+    CORS_ALLOW_ALL_API: bool = True  # Allows public /api/* routes to be called from ChatGPT/external clients
+
+    # Rate Limiting (SEC-003)
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_RPS: float = 10.0
+    RATE_LIMIT_BURST: float = 20.0
+
+    # Resource Protection Limits (RES-001, RES-002, RES-003)
+    MAX_QUERY_LENGTH: int = 500
+    MAX_TRANSCRIPT_SEGMENTS: int = 10000
+    MAX_CACHE_ENTRIES: int = 20000
 
     # Cache settings
     CACHE_BACKEND: Literal["sqlite", "memory", "redis"] = "sqlite"
@@ -63,6 +86,13 @@ class Settings(BaseSettings):
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
     )
+
+    @field_validator("CORS_ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
 
 
 settings = Settings()

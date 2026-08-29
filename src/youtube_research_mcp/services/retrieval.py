@@ -1,3 +1,4 @@
+import asyncio
 from collections import OrderedDict
 import logging
 import math
@@ -216,7 +217,7 @@ class HybridRetrievalIndex:
 
 
 class RetrievalIndexCache:
-    """Bounded in-memory LRU cache with TTL for retrieval indexes."""
+    """Bounded in-memory LRU cache with TTL and concurrent per-key locking for retrieval indexes."""
 
     def __init__(
         self,
@@ -226,6 +227,8 @@ class RetrievalIndexCache:
         self.max_size = max_size
         self.ttl_seconds = ttl_seconds
         self._cache: OrderedDict[str, Tuple[HybridRetrievalIndex, float]] = OrderedDict()
+        self._locks: Dict[str, asyncio.Lock] = {}
+        self._global_lock = asyncio.Lock()
 
     def get(self, video_id: str) -> Optional[HybridRetrievalIndex]:
         now = time.time()
@@ -247,6 +250,30 @@ class RetrievalIndexCache:
         if len(self._cache) > self.max_size:
             self._cache.popitem(last=False)  # Evict oldest
 
+    async def get_or_build(
+        self, video_id: str, chunks: List[TranscriptChunk]
+    ) -> HybridRetrievalIndex:
+        """Retrieve cached index or build once per video_id concurrently."""
+        cached = self.get(video_id)
+        if cached:
+            return cached
+
+        # Acquire or create per-video lock
+        async with self._global_lock:
+            if video_id not in self._locks:
+                self._locks[video_id] = asyncio.Lock()
+            video_lock = self._locks[video_id]
+
+        async with video_lock:
+            # Double-check after acquiring lock
+            cached = self.get(video_id)
+            if cached:
+                return cached
+
+            new_index = HybridRetrievalIndex(chunks)
+            self.put(video_id, new_index)
+            return new_index
+
 
 _index_cache = RetrievalIndexCache()
 
@@ -261,3 +288,9 @@ def get_retrieval_index(
     new_index = HybridRetrievalIndex(chunks)
     _index_cache.put(video_id, new_index)
     return new_index
+
+
+async def get_retrieval_index_async(
+    video_id: str, chunks: List[TranscriptChunk]
+) -> HybridRetrievalIndex:
+    return await _index_cache.get_or_build(video_id, chunks)

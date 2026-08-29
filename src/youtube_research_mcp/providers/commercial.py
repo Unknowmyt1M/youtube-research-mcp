@@ -60,9 +60,28 @@ class CommercialProvider(BaseTranscriptProvider):
         try:
             client = await self.get_client()
             if settings.SUPADATA_API_KEY:
-                url = f"https://api.supadata.ai/v1/youtube/transcript?videoId={clean_id}&lang={language}"
                 headers = {"x-api-key": settings.SUPADATA_API_KEY}
-                res = await client.get(url, headers=headers)
+                
+                # Try primary language first
+                query_url = f"https://api.supadata.ai/v1/youtube/transcript?videoId={clean_id}&lang={language}"
+                if translate_to:
+                    query_url += f"&translate={translate_to}"
+
+                res = await client.get(query_url, headers=headers)
+                actual_lang = translate_to if translate_to else language
+                fallback_used = False
+
+                # If primary language failed and fallback is specified, try fallback
+                if res.status_code != 200 and fallback_language and fallback_language != language:
+                    fb_url = f"https://api.supadata.ai/v1/youtube/transcript?videoId={clean_id}&lang={fallback_language}"
+                    if translate_to:
+                        fb_url += f"&translate={translate_to}"
+                    res_fb = await client.get(fb_url, headers=headers)
+                    if res_fb.status_code == 200:
+                        res = res_fb
+                        actual_lang = translate_to if translate_to else fallback_language
+                        fallback_used = True
+
                 if res.status_code == 200:
                     data = res.json()
                     content = data.get("content", [])
@@ -81,26 +100,31 @@ class CommercialProvider(BaseTranscriptProvider):
                             )
                         )
 
-                    full_text = " ".join(s.text for s in segments)
-                    dur_total = segments[-1].end if segments else 0.0
-                    latency_ms = (time.perf_counter() - start_t) * 1000.0
-                    self._health.record_success(ProviderCapability.TRANSCRIPT, latency_ms)
+                    if segments:
+                        full_text = " ".join(s.text for s in segments)
+                        dur_total = segments[-1].end if segments else 0.0
+                        latency_ms = (time.perf_counter() - start_t) * 1000.0
+                        self._health.record_success(ProviderCapability.TRANSCRIPT, latency_ms)
 
-                    return TranscriptResult(
-                        video_id=clean_id,
-                        language=language,
-                        requested_language=language,
-                        actual_language=language,
-                        fallback_used=False,
-                        is_generated=False,
-                        is_translated=bool(translate_to),
-                        total_segments=len(segments),
-                        total_words=len(full_text.split()),
-                        duration_seconds=dur_total,
-                        segments=segments,
-                        full_text=full_text,
-                    )
+                        return TranscriptResult(
+                            video_id=clean_id,
+                            language=actual_lang,
+                            requested_language=language,
+                            actual_language=actual_lang,
+                            fallback_used=fallback_used,
+                            fallback_language=fallback_language if fallback_used else None,
+                            is_generated=False,
+                            is_translated=bool(translate_to),
+                            total_segments=len(segments),
+                            total_words=len(full_text.split()),
+                            duration_seconds=dur_total,
+                            segments=segments,
+                            full_text=full_text,
+                        )
+
         except Exception as e:
             self._health.record_failure(ProviderCapability.TRANSCRIPT, str(e))
+
+        return None
 
         return None

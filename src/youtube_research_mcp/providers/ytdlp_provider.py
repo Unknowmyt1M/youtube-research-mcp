@@ -101,7 +101,10 @@ class YtDlpProvider(
                 return ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
 
         try:
-            data = await asyncio.to_thread(_run_search)
+            data = await asyncio.wait_for(
+                asyncio.to_thread(_run_search),
+                timeout=settings.REQUEST_TIMEOUT,
+            )
             results: List[VideoSearchResult] = []
             for entry in data.get("entries", []):
                 vid = entry.get("id")
@@ -130,6 +133,11 @@ class YtDlpProvider(
             self._health.record_success(ProviderCapability.SEARCH, latency_ms)
             return results
 
+        except asyncio.TimeoutError:
+            self._health.record_failure(
+                ProviderCapability.SEARCH, f"yt-dlp search timed out after {settings.REQUEST_TIMEOUT}s"
+            )
+            return []
         except Exception as e:
             self._health.record_failure(ProviderCapability.SEARCH, str(e))
             return []
@@ -152,7 +160,10 @@ class YtDlpProvider(
                 )
 
         try:
-            info = await asyncio.to_thread(_run_metadata)
+            info = await asyncio.wait_for(
+                asyncio.to_thread(_run_metadata),
+                timeout=settings.REQUEST_TIMEOUT,
+            )
             if not info:
                 self._health.record_failure(
                     ProviderCapability.METADATA, "Empty metadata result"
@@ -239,7 +250,10 @@ class YtDlpProvider(
                 )
 
         try:
-            info = await asyncio.to_thread(_run_transcript_extract)
+            info = await asyncio.wait_for(
+                asyncio.to_thread(_run_transcript_extract),
+                timeout=settings.REQUEST_TIMEOUT,
+            )
             if not info:
                 self._health.record_failure(
                     ProviderCapability.TRANSCRIPT, "Empty yt-dlp info"
@@ -344,6 +358,10 @@ class YtDlpProvider(
                         full_text=full_text,
                     )
 
+        except asyncio.TimeoutError:
+            self._health.record_failure(
+                ProviderCapability.TRANSCRIPT, f"yt-dlp transcript timed out after {settings.REQUEST_TIMEOUT}s"
+            )
         except Exception as e:
             self._health.record_failure(ProviderCapability.TRANSCRIPT, str(e))
 

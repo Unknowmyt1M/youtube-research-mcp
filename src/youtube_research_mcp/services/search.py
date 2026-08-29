@@ -8,6 +8,12 @@ from youtube_research_mcp.config import settings
 from youtube_research_mcp.models.search import SearchResponse, VideoSearchResult
 from youtube_research_mcp.services.router import get_router
 from youtube_research_mcp.utils.metrics import metrics
+from youtube_research_mcp.utils.validation import (
+    validate_date_filter,
+    validate_language_code,
+    validate_max_results,
+    validate_query,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +33,13 @@ class SearchService:
         published_after: Optional[str] = None,
         published_before: Optional[str] = None,
     ) -> SearchResponse:
-        sanitized_query = re.sub(r"\s+", " ", query.strip())
-        cache_key = f"search:{sanitized_query.lower()}:{max_results}:{language}:{published_after}:{published_before}"
+        clean_query = validate_query(query, max_length=settings.MAX_QUERY_LENGTH)
+        clean_max = validate_max_results(max_results, min_val=1, max_val=25, default=10)
+        clean_lang = validate_language_code(language, default="en") or "en"
+        clean_after = validate_date_filter(published_after)
+        clean_before = validate_date_filter(published_before)
+
+        cache_key = f"search:{clean_query.lower()}:{clean_max}:{clean_lang}:{clean_after}:{clean_before}"
 
         # 1. Check cache
         cached = await self.cache.get(cache_key)

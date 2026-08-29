@@ -124,13 +124,6 @@ class InnerTubeProvider(
 
             data = resp.json()
             results = self._parse_search_response(data, max_results)
-            if not results:
-                # HTTP 200 with empty or changed schema
-                self._health.record_failure(
-                    ProviderCapability.SEARCH, "Empty search result list or schema change"
-                )
-                return []
-
             latency_ms = (time.perf_counter() - start_t) * 1000.0
             self._health.record_success(ProviderCapability.SEARCH, latency_ms)
             return results
@@ -322,6 +315,9 @@ class InnerTubeProvider(
         thumbs = details.get("thumbnail", {}).get("thumbnails", [])
         thumb_url = thumbs[-1].get("url") if thumbs else None
 
+        microformat = data.get("microformat", {}).get("playerMicroformatRenderer", {})
+        pub_date = microformat.get("publishDate") or microformat.get("uploadDate")
+
         return VideoOverview(
             video_id=video_id,
             title=title,
@@ -330,6 +326,7 @@ class InnerTubeProvider(
             duration_seconds=duration_sec,
             duration_formatted=format_duration(duration_sec),
             view_count=view_count,
+            published_date=pub_date,
             description=description,
             tags=tags,
             chapters=chapters,

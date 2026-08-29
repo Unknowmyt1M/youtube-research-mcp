@@ -114,6 +114,24 @@ class SQLiteCache(BaseCache):
         raw_val = json.dumps(value)
 
         async with aiosqlite.connect(self.db_path) as db:
+            # Check table count and prune if exceeding maximum entries limit
+            async with db.execute("SELECT COUNT(*) FROM cache_store;") as cursor:
+                count_row = await cursor.fetchone()
+                current_count = count_row[0] if count_row else 0
+
+            if current_count >= settings.MAX_CACHE_ENTRIES:
+                # Delete expired entries or oldest expiring entries
+                await db.execute(
+                    """
+                    DELETE FROM cache_store
+                    WHERE key IN (
+                        SELECT key FROM cache_store
+                        ORDER BY expires_at ASC
+                        LIMIT 50
+                    );
+                    """
+                )
+
             await db.execute(
                 """
                 INSERT OR REPLACE INTO cache_store (key, value, is_negative, created_at, expires_at)

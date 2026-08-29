@@ -2,6 +2,7 @@ import asyncio
 import random
 import time
 from typing import Optional
+from youtube_research_mcp.config import settings
 
 
 class AsyncTokenBucket:
@@ -9,13 +10,27 @@ class AsyncTokenBucket:
 
     def __init__(self, rate: float, capacity: float):
         """rate: tokens per second, capacity: maximum token burst."""
-        self.rate = rate
-        self.capacity = capacity
-        self.tokens = capacity
+        self.rate = float(rate)
+        self.capacity = float(capacity)
+        self.tokens = float(capacity)
         self.last_update = time.monotonic()
         self._lock = asyncio.Lock()
 
+    async def try_acquire(self, tokens: float = 1.0) -> bool:
+        """Non-blocking token acquisition check for HTTP rate limiting."""
+        async with self._lock:
+            now = time.monotonic()
+            elapsed = now - self.last_update
+            self.last_update = now
+            self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)
+
+            if self.tokens >= tokens:
+                self.tokens -= tokens
+                return True
+            return False
+
     async def acquire(self, tokens: float = 1.0) -> None:
+        """Blocking token acquisition with async sleep."""
         async with self._lock:
             while True:
                 now = time.monotonic()
@@ -27,7 +42,6 @@ class AsyncTokenBucket:
                     self.tokens -= tokens
                     return
 
-                # Calculate wait time needed for next token
                 needed = tokens - self.tokens
                 wait_time = needed / self.rate
                 await asyncio.sleep(wait_time)
@@ -60,7 +74,20 @@ async def backoff_retry(
             attempt += 1
             if attempt > max_retries:
                 raise e
-            # Full jitter formula: sleep = uniform(0, min(max_delay, base_delay * 2^attempt))
             sleep_cap = min(max_delay, base_delay * (2 ** (attempt - 1)))
             sleep_time = random.uniform(base_delay, sleep_cap)
             await asyncio.sleep(sleep_time)
+
+
+_global_rate_limiter: Optional[AsyncTokenBucket] = None
+
+
+def get_rate_limiter() -> AsyncTokenBucket:
+    """Return the global rate limiter singleton configured by settings."""
+    global _global_rate_limiter
+    if _global_rate_limiter is None:
+        _global_rate_limiter = AsyncTokenBucket(
+            rate=settings.RATE_LIMIT_RPS,
+            capacity=settings.RATE_LIMIT_BURST,
+        )
+    return _global_rate_limiter
