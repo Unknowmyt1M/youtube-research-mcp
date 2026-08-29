@@ -75,16 +75,20 @@ class MetricsCollector:
             "uptime_seconds": uptime_sec,
             "requests": self.request_counts,
             "cache": {
-                **self.cache_stats,
-                "total_lookups": total_cache_reqs,
+                "hits": self.cache_stats["hits"],
+                "misses": self.cache_stats["misses"],
+                "negative_hits": self.cache_stats["negative_hits"],
                 "hit_rate_pct": hit_rate,
             },
             "single_flight_coalesced": self.single_flight_coalesced,
             "retrieval": {
                 "total_searches": self.retrieval_stats["total_searches"],
+                "total_matches": self.retrieval_stats["total_matches_returned"],
                 "avg_latency_ms": avg_retrieval_latency,
             },
         }
+
+    get_snapshot = get_summary
 
 
 # Global singleton

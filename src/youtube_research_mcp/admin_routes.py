@@ -53,7 +53,7 @@ def register_admin_routes(mcp):
     async def admin_metrics(request: Request) -> Response:
         if request.method == "OPTIONS":
             return Response("", headers=cors_headers)
-        data = metrics.get_snapshot()
+        data = metrics.get_summary()
         data["single_flight_coalesced_savings"] = get_single_flight().coalesced_count
         return JSONResponse({"status": "success", "metrics": data}, headers=cors_headers)
 
