@@ -3,6 +3,7 @@ from typing import Any, Dict
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from youtube_research_mcp.models.research import ResearchDepth
 from youtube_research_mcp.services.search import SearchService
 from youtube_research_mcp.services.metadata import MetadataService
 from youtube_research_mcp.services.transcripts import TranscriptService
@@ -21,7 +22,7 @@ def get_openapi_schema(base_url: str) -> Dict[str, Any]:
         "info": {
             "title": "YouTube Research Engine",
             "description": "Fast, reliable, API-keyless YouTube knowledge extraction and deep research for AI agents.",
-            "version": "v1.0.0",
+            "version": "v2.0.0",
         },
         "servers": [{"url": base_url}],
         "paths": {
@@ -40,6 +41,8 @@ def get_openapi_schema(base_url: str) -> Dict[str, Any]:
                                         "query": {"type": "string", "description": "Search keywords or topic"},
                                         "max_results": {"type": "integer", "default": 5, "description": "Max results (1-25)"},
                                         "language": {"type": "string", "default": "en", "description": "Language code"},
+                                        "published_after": {"type": "string", "description": "ISO date filter YYYY-MM-DD"},
+                                        "published_before": {"type": "string", "description": "ISO date filter YYYY-MM-DD"},
                                     },
                                     "required": ["query"],
                                 }
@@ -84,7 +87,7 @@ def get_openapi_schema(base_url: str) -> Dict[str, Any]:
             "/api/transcript": {
                 "post": {
                     "summary": "Get Video Transcript",
-                    "description": "Extract full spoken dialogue with timestamped segments and optional translation.",
+                    "description": "Extract full spoken dialogue with timestamped segments and explicit language provenance.",
                     "operationId": "youtube_transcript",
                     "requestBody": {
                         "required": True,
@@ -95,6 +98,7 @@ def get_openapi_schema(base_url: str) -> Dict[str, Any]:
                                     "properties": {
                                         "video_id": {"type": "string", "description": "11-character video ID or full URL"},
                                         "language": {"type": "string", "default": "en", "description": "Caption language"},
+                                        "fallback_language": {"type": "string", "default": "en", "description": "Fallback language if primary unavailable"},
                                         "include_timestamps": {"type": "boolean", "default": True, "description": "Include timestamps"},
                                         "translate_to": {"type": "string", "description": "Optional translation language"},
                                     },
@@ -143,7 +147,7 @@ def get_openapi_schema(base_url: str) -> Dict[str, Any]:
             "/api/research": {
                 "post": {
                     "summary": "Multi-Video Research Engine",
-                    "description": "Autonomous multi-video research and cross-video evidence synthesis with timestamp deep links.",
+                    "description": "Autonomous multi-video research and cross-video evidence synthesis with timestamp deep links and near-duplicate clustering.",
                     "operationId": "youtube_research",
                     "requestBody": {
                         "required": True,
@@ -153,8 +157,8 @@ def get_openapi_schema(base_url: str) -> Dict[str, Any]:
                                     "type": "object",
                                     "properties": {
                                         "query": {"type": "string", "description": "Broad topic to research across YouTube"},
-                                        "max_videos": {"type": "integer", "default": 5, "description": "Max candidate videos"},
-                                        "depth": {"type": "string", "default": "standard", "description": "quick | standard | deep"},
+                                        "depth": {"type": "string", "enum": ["quick", "standard", "deep"], "default": "standard"},
+                                        "max_videos_per_channel": {"type": "integer", "default": 2},
                                     },
                                     "required": ["query"],
                                 }
@@ -191,8 +195,9 @@ def register_openai_connector(mcp):
             {
                 "status": "online",
                 "name": "YouTube Research Engine",
+                "version": "2.0.0",
                 "description": "Fast, reliable, API-keyless YouTube knowledge extraction and deep research.",
-                "mcp_endpoint": "/sse",
+                "mcp_endpoint": "/mcp",
                 "openapi_endpoint": "/openapi.json",
                 "plugin_manifest": "/.well-known/ai-plugin.json",
             },
@@ -246,7 +251,15 @@ def register_openai_connector(mcp):
         query = body.get("query", "")
         max_res = body.get("max_results", 5)
         lang = body.get("language", "en")
-        res = await _search_service.search(query=query, max_results=max_res, language=lang)
+        p_after = body.get("published_after")
+        p_before = body.get("published_before")
+        res = await _search_service.search(
+            query=query,
+            max_results=max_res,
+            language=lang,
+            published_after=p_after,
+            published_before=p_before,
+        )
         return JSONResponse(res.model_dump(), headers=cors_headers)
 
     # REST: /api/video
@@ -275,14 +288,27 @@ def register_openai_connector(mcp):
             body = {}
         vid = body.get("video_id", "")
         lang = body.get("language", "en")
+        fb_lang = body.get("fallback_language", "en")
         inc_ts = body.get("include_timestamps", True)
         trans = body.get("translate_to")
-        res = await _transcript_service.get_transcript(vid, language=lang, translate_to=trans)
+        res = await _transcript_service.get_transcript(
+            vid, language=lang, fallback_language=fb_lang, translate_to=trans
+        )
         if not res:
             return JSONResponse({"status": "error", "message": f"No captions found for video: {vid}"}, status_code=404, headers=cors_headers)
         dump = res.model_dump()
         if not inc_ts:
-            return JSONResponse({"video_id": dump["video_id"], "language": dump["language"], "full_text": dump["full_text"]}, headers=cors_headers)
+            return JSONResponse(
+                {
+                    "video_id": dump["video_id"],
+                    "requested_language": dump["requested_language"],
+                    "actual_language": dump["actual_language"],
+                    "fallback_used": dump["fallback_used"],
+                    "total_words": dump["total_words"],
+                    "full_text": dump["full_text"],
+                },
+                headers=cors_headers,
+            )
         return JSONResponse(dump, headers=cors_headers)
 
     # REST: /api/find_in_video
@@ -310,7 +336,13 @@ def register_openai_connector(mcp):
         except Exception:
             body = {}
         q = body.get("query", "")
-        max_vids = body.get("max_videos", 5)
-        d = body.get("depth", "standard")
-        res = await _research_engine.research_topic(q, max_videos=max_vids, depth=d)
+        d_str = body.get("depth", "standard")
+        try:
+            depth = ResearchDepth(d_str)
+        except ValueError:
+            depth = ResearchDepth.STANDARD
+        max_per_ch = body.get("max_videos_per_channel", 2)
+        res = await _research_engine.research_topic(
+            q, depth=depth, max_videos_per_channel=max_per_ch
+        )
         return JSONResponse(res.model_dump(), headers=cors_headers)

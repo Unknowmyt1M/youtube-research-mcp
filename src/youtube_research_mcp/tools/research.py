@@ -2,6 +2,7 @@ from typing import Any, Dict, Optional
 from fastmcp import Context
 from pydantic import Field
 
+from youtube_research_mcp.models.research import ResearchDepth
 from youtube_research_mcp.services.research import ResearchEngine
 
 _research_engine = ResearchEngine()
@@ -13,32 +14,40 @@ def register_research_tools(mcp):
     @mcp.tool(
         name="youtube_research",
         description=(
-            "Autonomous multi-video research tool. Discovers relevant YouTube videos on a topic, "
-            "extracts transcripts concurrently, performs semantic search across all candidate videos, "
-            "and aggregates timestamped citations with source provenance. "
-            "Use this tool when the user wants to research a topic across multiple videos and compare what creators say."
+            "Autonomous multi-video research tool. Discovers relevant YouTube videos across diverse channels, "
+            "extracts spoken transcripts concurrently, performs semantic search, and aggregates timestamped citations "
+            "with near-duplicate claim clustering."
         ),
     )
     async def youtube_research(
         query: str = Field(
             description="Broad research topic, question, or technology to investigate across YouTube"
         ),
-        max_videos: int = Field(
-            default=5, ge=1, le=10, description="Number of candidate videos to analyze (1-10)"
+        depth: ResearchDepth = Field(
+            default=ResearchDepth.STANDARD,
+            description="Research depth: 'quick' (2 videos), 'standard' (3 videos), or 'deep' (5 videos)",
         ),
-        depth: str = Field(
-            default="standard", description="Research depth: 'quick' (top 2 quotes/video), 'standard' (top 3 quotes/video), or 'deep' (top 5 quotes/video)"
+        max_videos_per_channel: int = Field(
+            default=2, ge=1, le=5, description="Maximum videos to include from any single channel (source diversity)"
+        ),
+        language: str = Field(
+            default="en", description="Target video search and transcript language"
+        ),
+        fallback_language: Optional[str] = Field(
+            default="en", description="Fallback transcript language if requested language is unavailable"
         ),
         ctx: Optional[Context] = None,
     ) -> Dict[str, Any]:
         if ctx:
             await ctx.info(
-                f"Starting multi-video research on '{query}' (analyzing up to {max_videos} videos)"
+                f"Starting multi-video research on '{query}' (depth={depth.value}, max_per_channel={max_videos_per_channel})"
             )
 
         res = await _research_engine.research_topic(
             query=query,
-            max_videos=max_videos,
             depth=depth,
+            max_videos_per_channel=max_videos_per_channel,
+            language=language,
+            fallback_language=fallback_language,
         )
         return res.model_dump()

@@ -16,6 +16,17 @@ class TranscriptChunker:
         self.overlap_words = overlap_words
         self.sentence_end = re.compile(r"[\.!\?]\s*|\n+")
 
+    def chunk_segments(
+        self,
+        segments: List[TranscriptSegment],
+        video_id: str,
+        chapters: Optional[List[Chapter]] = None,
+    ) -> List[TranscriptChunk]:
+        """Alias for chunk_transcript matching kwargs."""
+        return self.chunk_transcript(
+            video_id=video_id, segments=segments, chapters=chapters
+        )
+
     def chunk_transcript(
         self,
         video_id: str,

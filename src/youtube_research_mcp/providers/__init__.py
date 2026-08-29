@@ -1,19 +1,29 @@
 from youtube_research_mcp.providers.base import (
-    BaseSearchProvider,
     BaseMetadataProvider,
+    BaseSearchProvider,
     BaseTranscriptProvider,
-    ProviderHealth,
+    CapabilityProviderHealth,
+    CircuitState,
+    ProviderCapability,
+    ProviderHealthReport,
 )
+from youtube_research_mcp.providers.commercial import CommercialProvider
 from youtube_research_mcp.providers.innertube import InnerTubeProvider
 from youtube_research_mcp.providers.ytdlp_provider import YtDlpProvider
-from youtube_research_mcp.providers.commercial import CommercialFallbackProvider
+
+# Backwards compatibility alias
+ProviderHealth = CapabilityProviderHealth
 
 __all__ = [
     "BaseSearchProvider",
     "BaseMetadataProvider",
     "BaseTranscriptProvider",
+    "CapabilityProviderHealth",
     "ProviderHealth",
+    "ProviderHealthReport",
+    "ProviderCapability",
+    "CircuitState",
     "InnerTubeProvider",
     "YtDlpProvider",
-    "CommercialFallbackProvider",
+    "CommercialProvider",
 ]

@@ -1,31 +1,34 @@
 import asyncio
 import logging
-from typing import List, Optional
+from typing import Any, List, Optional
+import httpx
 
-from youtube_research_mcp.config import settings
 from youtube_research_mcp.models.search import VideoSearchResult
-from youtube_research_mcp.models.transcript import TranscriptResult
 from youtube_research_mcp.models.video import VideoOverview
+from youtube_research_mcp.models.transcript import TranscriptResult
 from youtube_research_mcp.providers.base import (
     BaseMetadataProvider,
     BaseSearchProvider,
     BaseTranscriptProvider,
-    ProviderHealth,
+    ProviderCapability,
+    ProviderHealthReport,
 )
-from youtube_research_mcp.providers.commercial import CommercialFallbackProvider
+from youtube_research_mcp.providers.commercial import CommercialProvider
 from youtube_research_mcp.providers.innertube import InnerTubeProvider
 from youtube_research_mcp.providers.ytdlp_provider import YtDlpProvider
+from youtube_research_mcp.utils.metrics import metrics
+from youtube_research_mcp.utils.single_flight import get_single_flight
 
-logger = logging.getLogger(settings.MCP_SERVER_NAME)
+logger = logging.getLogger(__name__)
 
 
 class ProviderRouter:
-    """Intelligent multi-tier router with failover, health tracking, and circuit breaker."""
+    """Capability-aware failover coordinator with async single-flight request coalescing."""
 
     def __init__(self):
         self.innertube = InnerTubeProvider()
         self.ytdlp = YtDlpProvider()
-        self.commercial = CommercialFallbackProvider()
+        self.commercial = CommercialProvider()
 
         self.search_providers: List[BaseSearchProvider] = [
             self.innertube,
@@ -36,22 +39,13 @@ class ProviderRouter:
             self.ytdlp,
         ]
         self.transcript_providers: List[BaseTranscriptProvider] = [
+            self.ytdlp,  # Tier 1 for transcripts due to anti-bot client rotation
             self.innertube,
-            self.ytdlp,
             self.commercial,
         ]
+        self.flight = get_single_flight()
 
-    def get_health_report(self) -> List[ProviderHealth]:
-        return [
-            self.innertube.health,
-            self.ytdlp.health,
-            self.commercial.health,
-        ]
-
-    # -------------------------------------------------------------
-    # SEARCH ROUTING
-    # -------------------------------------------------------------
-    async def route_search(
+    async def search(
         self,
         query: str,
         max_results: int = 10,
@@ -59,96 +53,102 @@ class ProviderRouter:
         published_after: Optional[str] = None,
         published_before: Optional[str] = None,
     ) -> List[VideoSearchResult]:
-        for provider in self.search_providers:
-            if not provider.health.is_available():
-                logger.warning(
-                    f"Skipping search provider {provider.name} (circuit open)"
-                )
-                continue
+        flight_key = f"search:{query}:{max_results}:{language}:{published_after}:{published_before}"
 
-            try:
-                results = await asyncio.wait_for(
-                    provider.search(
+        async def _do_search():
+            metrics.record_request("search")
+            for provider in self.search_providers:
+                if not provider.health.can_execute(ProviderCapability.SEARCH):
+                    continue
+                try:
+                    res = await provider.search(
                         query=query,
                         max_results=max_results,
                         language=language,
                         published_after=published_after,
                         published_before=published_before,
-                    ),
-                    timeout=settings.REQUEST_TIMEOUT,
-                )
-                if results:
-                    return results
-            except Exception as e:
-                logger.warning(
-                    f"Search provider {provider.name} failed: {e}. Falling back."
-                )
-                provider.health.record_failure(str(e))
+                    )
+                    if res:
+                        return res
+                except Exception as e:
+                    logger.warning(
+                        f"Search provider '{provider.name}' failed: {e}. Trying next tier."
+                    )
+            return []
 
-        return []
+        return await self.flight.execute(flight_key, _do_search)
 
-    # -------------------------------------------------------------
-    # METADATA ROUTING
-    # -------------------------------------------------------------
-    async def route_metadata(self, video_id: str) -> Optional[VideoOverview]:
-        for provider in self.metadata_providers:
-            if not provider.health.is_available():
-                continue
+    async def get_video(self, video_id: str) -> Optional[VideoOverview]:
+        flight_key = f"metadata:{video_id}"
 
-            try:
-                overview = await asyncio.wait_for(
-                    provider.get_video(video_id),
-                    timeout=settings.REQUEST_TIMEOUT,
-                )
-                if overview:
-                    return overview
-            except Exception as e:
-                logger.warning(
-                    f"Metadata provider {provider.name} failed: {e}. Falling back."
-                )
-                provider.health.record_failure(str(e))
+        async def _do_metadata():
+            metrics.record_request("metadata")
+            for provider in self.metadata_providers:
+                if not provider.health.can_execute(ProviderCapability.METADATA):
+                    continue
+                try:
+                    res = await provider.get_video(video_id)
+                    if res:
+                        return res
+                except Exception as e:
+                    logger.warning(
+                        f"Metadata provider '{provider.name}' failed for {video_id}: {e}."
+                    )
+            return None
 
-        return None
+        return await self.flight.execute(flight_key, _do_metadata)
 
-    # -------------------------------------------------------------
-    # TRANSCRIPT ROUTING
-    # -------------------------------------------------------------
-    async def route_transcript(
+    async def get_transcript(
         self,
         video_id: str,
         language: str = "en",
+        fallback_language: Optional[str] = None,
         translate_to: Optional[str] = None,
     ) -> Optional[TranscriptResult]:
-        for provider in self.transcript_providers:
-            if not provider.health.is_available():
-                continue
+        flight_key = f"transcript:{video_id}:{language}:{fallback_language}:{translate_to}"
 
-            try:
-                transcript = await asyncio.wait_for(
-                    provider.get_transcript(
+        async def _do_transcript():
+            metrics.record_request("transcript")
+            for provider in self.transcript_providers:
+                if not provider.health.can_execute(ProviderCapability.TRANSCRIPT):
+                    continue
+                try:
+                    res = await provider.get_transcript(
                         video_id=video_id,
                         language=language,
+                        fallback_language=fallback_language,
                         translate_to=translate_to,
-                    ),
-                    timeout=settings.REQUEST_TIMEOUT,
-                )
-                if transcript and transcript.segments:
-                    return transcript
-            except Exception as e:
-                logger.warning(
-                    f"Transcript provider {provider.name} failed: {e}. Falling back."
-                )
-                provider.health.record_failure(str(e))
+                    )
+                    if res and res.segments:
+                        return res
+                except Exception as e:
+                    logger.warning(
+                        f"Transcript provider '{provider.name}' failed for {video_id}: {e}."
+                    )
+            return None
 
-        return None
+        return await self.flight.execute(flight_key, _do_transcript)
+
+    def get_health_report(self) -> List[ProviderHealthReport]:
+        return [
+            self.innertube.health.get_report(),
+            self.ytdlp.health.get_report(),
+            self.commercial.health.get_report(),
+        ]
+
+    async def close(self):
+        """Close provider HTTP clients."""
+        await self.innertube.close()
+        await self.ytdlp.close()
+        await self.commercial.close()
 
 
-# Global singleton router
-_global_router: Optional[ProviderRouter] = None
+# Global router singleton
+_router_instance: Optional[ProviderRouter] = None
 
 
 def get_router() -> ProviderRouter:
-    global _global_router
-    if _global_router is None:
-        _global_router = ProviderRouter()
-    return _global_router
+    global _router_instance
+    if _router_instance is None:
+        _router_instance = ProviderRouter()
+    return _router_instance

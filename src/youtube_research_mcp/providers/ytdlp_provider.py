@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 import yt_dlp
 
+from youtube_research_mcp.config import settings
 from youtube_research_mcp.models.search import VideoSearchResult
 from youtube_research_mcp.models.video import Chapter, VideoOverview
 from youtube_research_mcp.models.transcript import (
@@ -14,7 +15,8 @@ from youtube_research_mcp.providers.base import (
     BaseMetadataProvider,
     BaseSearchProvider,
     BaseTranscriptProvider,
-    ProviderHealth,
+    CapabilityProviderHealth,
+    ProviderCapability,
 )
 from youtube_research_mcp.utils.formatting import (
     format_duration,
@@ -28,18 +30,39 @@ from youtube_research_mcp.utils.security import canonical_video_url, extract_vid
 class YtDlpProvider(
     BaseSearchProvider, BaseMetadataProvider, BaseTranscriptProvider
 ):
-    """In-Process yt-dlp provider with robust Android/iOS/TV player client rotation to bypass bot checks."""
+    """In-Process yt-dlp provider with anti-bot player client rotation and capability-level health."""
 
     def __init__(self):
-        self._health = ProviderHealth(provider_name="yt-dlp")
+        self._health = CapabilityProviderHealth(provider_name="yt-dlp")
+        self._client: Optional[httpx.AsyncClient] = None
 
     @property
     def name(self) -> str:
         return "yt-dlp"
 
     @property
-    def health(self) -> ProviderHealth:
+    def health(self) -> CapabilityProviderHealth:
         return self._health
+
+    async def get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            limits = httpx.Limits(
+                max_connections=settings.POOL_MAX_CONNECTIONS,
+                max_keepalive_connections=settings.POOL_MAX_KEEPALIVE,
+            )
+            self._client = httpx.AsyncClient(
+                timeout=settings.REQUEST_TIMEOUT,
+                http2=True,
+                follow_redirects=True,
+                limits=limits,
+                proxy=settings.HTTP_PROXY,
+            )
+        return self._client
+
+    async def close(self):
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     def _get_base_opts(self) -> Dict[str, Any]:
         """Base yt-dlp options configured to bypass YouTube bot detection without cookies."""
@@ -66,6 +89,9 @@ class YtDlpProvider(
         published_after: Optional[str] = None,
         published_before: Optional[str] = None,
     ) -> List[VideoSearchResult]:
+        if not self._health.can_execute(ProviderCapability.SEARCH):
+            return []
+
         start_t = time.perf_counter()
 
         def _run_search():
@@ -101,17 +127,20 @@ class YtDlpProvider(
                 )
 
             latency_ms = (time.perf_counter() - start_t) * 1000.0
-            self._health.record_success(latency_ms)
+            self._health.record_success(ProviderCapability.SEARCH, latency_ms)
             return results
 
         except Exception as e:
-            self._health.record_failure(str(e))
+            self._health.record_failure(ProviderCapability.SEARCH, str(e))
             return []
 
     # -------------------------------------------------------------
     # METADATA IMPLEMENTATION
     # -------------------------------------------------------------
     async def get_video(self, video_id: str) -> Optional[VideoOverview]:
+        if not self._health.can_execute(ProviderCapability.METADATA):
+            return None
+
         start_t = time.perf_counter()
         clean_id = extract_video_id(video_id)
 
@@ -125,6 +154,9 @@ class YtDlpProvider(
         try:
             info = await asyncio.to_thread(_run_metadata)
             if not info:
+                self._health.record_failure(
+                    ProviderCapability.METADATA, "Empty metadata result"
+                )
                 return None
 
             dur_sec = info.get("duration")
@@ -167,11 +199,11 @@ class YtDlpProvider(
             )
 
             latency_ms = (time.perf_counter() - start_t) * 1000.0
-            self._health.record_success(latency_ms)
+            self._health.record_success(ProviderCapability.METADATA, latency_ms)
             return overview
 
         except Exception as e:
-            self._health.record_failure(str(e))
+            self._health.record_failure(ProviderCapability.METADATA, str(e))
             return None
 
     # -------------------------------------------------------------
@@ -181,16 +213,25 @@ class YtDlpProvider(
         self,
         video_id: str,
         language: str = "en",
+        fallback_language: Optional[str] = None,
         translate_to: Optional[str] = None,
     ) -> Optional[TranscriptResult]:
+        if not self._health.can_execute(ProviderCapability.TRANSCRIPT):
+            return None
+
         start_t = time.perf_counter()
         clean_id = extract_video_id(video_id)
+
+        # Restrict requested subtitle languages strictly to avoid downloading unrelated tracks
+        req_langs = [language, f"{language}-orig"]
+        if fallback_language and fallback_language not in req_langs:
+            req_langs.extend([fallback_language, f"{fallback_language}-orig"])
 
         def _run_transcript_extract():
             opts = self._get_base_opts()
             opts["writesubtitles"] = True
             opts["writeautomaticsub"] = True
-            opts["subtitleslangs"] = [language, "en", "en-orig", ".*"]
+            opts["subtitleslangs"] = req_langs
             opts["subtitlesformat"] = "json3"
             with yt_dlp.YoutubeDL(opts) as ydl:
                 return ydl.extract_info(
@@ -200,6 +241,9 @@ class YtDlpProvider(
         try:
             info = await asyncio.to_thread(_run_transcript_extract)
             if not info:
+                self._health.record_failure(
+                    ProviderCapability.TRANSCRIPT, "Empty yt-dlp info"
+                )
                 return None
 
             subs = info.get("subtitles", {})
@@ -208,11 +252,10 @@ class YtDlpProvider(
             track_url = None
             is_gen = False
             matched_lang = language
+            fallback_used = False
 
-            # Search in manual subtitles then auto captions
-            candidates = [language, f"{language}-orig", "en", "en-orig", "en-US", "en-GB"]
-            
-            # 1. Manual captions check
+            # Search priority 1: Requested language (manual then auto)
+            candidates = [language, f"{language}-orig"]
             for cand in candidates:
                 if cand in subs:
                     entries = subs[cand]
@@ -223,11 +266,32 @@ class YtDlpProvider(
                     if track_url:
                         matched_lang = cand
                         break
+                elif cand in auto_subs:
+                    entries = auto_subs[cand]
+                    track_url = next(
+                        (e["url"] for e in entries if e.get("ext") == "json3"),
+                        entries[0]["url"] if entries else None,
+                    )
+                    if track_url:
+                        is_gen = True
+                        matched_lang = cand
+                        break
 
-            # 2. Auto captions check
-            if not track_url:
-                for cand in candidates:
-                    if cand in auto_subs:
+            # Search priority 2: Fallback language if explicitly specified
+            if not track_url and fallback_language:
+                fb_candidates = [fallback_language, f"{fallback_language}-orig"]
+                for cand in fb_candidates:
+                    if cand in subs:
+                        entries = subs[cand]
+                        track_url = next(
+                            (e["url"] for e in entries if e.get("ext") == "json3"),
+                            entries[0]["url"] if entries else None,
+                        )
+                        if track_url:
+                            matched_lang = cand
+                            fallback_used = True
+                            break
+                    elif cand in auto_subs:
                         entries = auto_subs[cand]
                         track_url = next(
                             (e["url"] for e in entries if e.get("ext") == "json3"),
@@ -236,23 +300,11 @@ class YtDlpProvider(
                         if track_url:
                             is_gen = True
                             matched_lang = cand
+                            fallback_used = True
                             break
 
-            # 3. Any available caption track
             if not track_url:
-                all_available = {**subs, **auto_subs}
-                if all_available:
-                    first_lang = next(iter(all_available))
-                    entries = all_available[first_lang]
-                    track_url = next(
-                        (e["url"] for e in entries if e.get("ext") == "json3"),
-                        entries[0]["url"] if entries else None,
-                    )
-                    matched_lang = first_lang
-                    is_gen = first_lang in auto_subs
-
-            if not track_url:
-                self._health.record_failure("No subtitle tracks found in yt-dlp info")
+                # Requested language unavailable and no fallback configured
                 return None
 
             # Add format json3 parameter if missing
@@ -264,31 +316,35 @@ class YtDlpProvider(
                 track_url += f"&tlang={translate_to}"
                 matched_lang = translate_to
 
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                res = await client.get(track_url)
-                if res.status_code == 200:
-                    data = res.json()
-                    segments = self._parse_json3(data, clean_id)
-                    if segments:
-                        full_text = " ".join(s.text for s in segments)
-                        dur = segments[-1].end if segments else 0.0
-                        latency_ms = (time.perf_counter() - start_t) * 1000.0
-                        self._health.record_success(latency_ms)
+            client = await self.get_client()
+            res = await client.get(track_url)
+            if res.status_code == 200:
+                data = res.json()
+                segments = self._parse_json3(data, clean_id)
+                if segments:
+                    full_text = " ".join(s.text for s in segments)
+                    dur = segments[-1].end if segments else 0.0
+                    latency_ms = (time.perf_counter() - start_t) * 1000.0
+                    self._health.record_success(ProviderCapability.TRANSCRIPT, latency_ms)
 
-                        return TranscriptResult(
-                            video_id=clean_id,
-                            language=matched_lang,
-                            is_generated=is_gen,
-                            is_translated=bool(translate_to),
-                            total_segments=len(segments),
-                            total_words=len(full_text.split()),
-                            duration_seconds=dur,
-                            segments=segments,
-                            full_text=full_text,
-                        )
+                    return TranscriptResult(
+                        video_id=clean_id,
+                        language=matched_lang,
+                        requested_language=language,
+                        actual_language=matched_lang,
+                        fallback_used=fallback_used,
+                        fallback_language=fallback_language if fallback_used else None,
+                        is_generated=is_gen,
+                        is_translated=bool(translate_to),
+                        total_segments=len(segments),
+                        total_words=len(full_text.split()),
+                        duration_seconds=dur,
+                        segments=segments,
+                        full_text=full_text,
+                    )
 
         except Exception as e:
-            self._health.record_failure(str(e))
+            self._health.record_failure(ProviderCapability.TRANSCRIPT, str(e))
 
         return None
 

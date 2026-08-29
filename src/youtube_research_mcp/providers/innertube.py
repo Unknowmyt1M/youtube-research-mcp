@@ -16,7 +16,8 @@ from youtube_research_mcp.providers.base import (
     BaseMetadataProvider,
     BaseSearchProvider,
     BaseTranscriptProvider,
-    ProviderHealth,
+    CapabilityProviderHealth,
+    ProviderCapability,
 )
 from youtube_research_mcp.utils.formatting import (
     format_duration,
@@ -30,7 +31,7 @@ from youtube_research_mcp.utils.security import canonical_video_url, extract_vid
 class InnerTubeProvider(
     BaseSearchProvider, BaseMetadataProvider, BaseTranscriptProvider
 ):
-    """Direct InnerTube HTTP client (Tier 1: Ultra-fast, API-keyless)."""
+    """Direct InnerTube HTTP/2 client with shared connection pooling and capability health tracking."""
 
     SEARCH_URL = "https://www.youtube.com/youtubei/v1/search?prettyPrint=false"
     PLAYER_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
@@ -53,33 +54,41 @@ class InnerTubeProvider(
                 "X-YouTube-Client-Version": "2.20250101.01.00",
             },
         },
-        "TV_EMBEDDED": {
-            "context": {
-                "client": {
-                    "clientName": "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
-                    "clientVersion": "2.0",
-                    "hl": "en",
-                    "gl": "US",
-                },
-                "thirdParty": {"embedUrl": "https://www.youtube.com"},
-            },
-            "headers": {
-                "User-Agent": "Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/4.0 Chrome/76.0.3809.146 TV Safari/537.36",
-                "Content-Type": "application/json",
-            },
-        },
     }
 
     def __init__(self):
-        self._health = ProviderHealth(provider_name="InnerTube")
+        self._health = CapabilityProviderHealth(provider_name="InnerTube")
+        self._client: Optional[httpx.AsyncClient] = None
 
     @property
     def name(self) -> str:
         return "InnerTube"
 
     @property
-    def health(self) -> ProviderHealth:
+    def health(self) -> CapabilityProviderHealth:
         return self._health
+
+    async def get_client(self) -> httpx.AsyncClient:
+        """Get or initialize the shared long-lived connection pool."""
+        if self._client is None or self._client.is_closed:
+            limits = httpx.Limits(
+                max_connections=settings.POOL_MAX_CONNECTIONS,
+                max_keepalive_connections=settings.POOL_MAX_KEEPALIVE,
+            )
+            self._client = httpx.AsyncClient(
+                timeout=settings.REQUEST_TIMEOUT,
+                http2=True,
+                follow_redirects=True,
+                limits=limits,
+                proxy=settings.HTTP_PROXY,
+            )
+        return self._client
+
+    async def close(self):
+        """Close shared HTTP client connection pool on server shutdown."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     # -------------------------------------------------------------
     # SEARCH IMPLEMENTATION
@@ -92,6 +101,9 @@ class InnerTubeProvider(
         published_after: Optional[str] = None,
         published_before: Optional[str] = None,
     ) -> List[VideoSearchResult]:
+        if not self._health.can_execute(ProviderCapability.SEARCH):
+            return []
+
         start_t = time.perf_counter()
         cfg = self.CLIENT_CONFIGS["WEB"]
         payload = {
@@ -100,26 +112,31 @@ class InnerTubeProvider(
         }
 
         try:
-            async with httpx.AsyncClient(
-                headers=cfg["headers"],
-                timeout=settings.REQUEST_TIMEOUT,
-                http2=True,
-                follow_redirects=True,
-                proxy=settings.HTTP_PROXY,
-            ) as client:
-                resp = await client.post(self.SEARCH_URL, json=payload)
-                if resp.status_code != 200:
-                    self._health.record_failure(f"HTTP {resp.status_code}")
-                    return []
+            client = await self.get_client()
+            resp = await client.post(
+                self.SEARCH_URL, headers=cfg["headers"], json=payload
+            )
+            if resp.status_code != 200:
+                self._health.record_failure(
+                    ProviderCapability.SEARCH, f"HTTP {resp.status_code}"
+                )
+                return []
 
-                data = resp.json()
-                results = self._parse_search_response(data, max_results)
-                latency_ms = (time.perf_counter() - start_t) * 1000.0
-                self._health.record_success(latency_ms)
-                return results
+            data = resp.json()
+            results = self._parse_search_response(data, max_results)
+            if not results:
+                # HTTP 200 with empty or changed schema
+                self._health.record_failure(
+                    ProviderCapability.SEARCH, "Empty search result list or schema change"
+                )
+                return []
+
+            latency_ms = (time.perf_counter() - start_t) * 1000.0
+            self._health.record_success(ProviderCapability.SEARCH, latency_ms)
+            return results
 
         except Exception as e:
-            self._health.record_failure(str(e))
+            self._health.record_failure(ProviderCapability.SEARCH, str(e))
             return []
 
     def _parse_search_response(
@@ -218,6 +235,9 @@ class InnerTubeProvider(
     # METADATA IMPLEMENTATION
     # -------------------------------------------------------------
     async def get_video(self, video_id: str) -> Optional[VideoOverview]:
+        if not self._health.can_execute(ProviderCapability.METADATA):
+            return None
+
         start_t = time.perf_counter()
         clean_id = extract_video_id(video_id)
         cfg = self.CLIENT_CONFIGS["WEB"]
@@ -227,37 +247,46 @@ class InnerTubeProvider(
         }
 
         try:
-            async with httpx.AsyncClient(
-                headers=cfg["headers"],
-                timeout=settings.REQUEST_TIMEOUT,
-                http2=True,
-                follow_redirects=True,
-                proxy=settings.HTTP_PROXY,
-            ) as client:
-                resp = await client.post(self.PLAYER_URL, json=payload)
-                if resp.status_code != 200:
-                    self._health.record_failure(f"HTTP {resp.status_code}")
-                    return None
+            client = await self.get_client()
+            resp = await client.post(
+                self.PLAYER_URL, headers=cfg["headers"], json=payload
+            )
+            if resp.status_code != 200:
+                self._health.record_failure(
+                    ProviderCapability.METADATA, f"HTTP {resp.status_code}"
+                )
+                return None
 
-                data = resp.json()
-                playability = data.get("playabilityStatus", {}).get("status")
-                if playability != "OK":
-                    self._health.record_failure(f"Playability: {playability}")
-                    return None
+            data = resp.json()
+            playability = data.get("playabilityStatus", {}).get("status")
+            if playability != "OK":
+                self._health.record_failure(
+                    ProviderCapability.METADATA, f"Playability: {playability}"
+                )
+                return None
 
-                overview = self._parse_player_metadata(data, clean_id)
-                latency_ms = (time.perf_counter() - start_t) * 1000.0
-                self._health.record_success(latency_ms)
-                return overview
+            overview = self._parse_player_metadata(data, clean_id)
+            if not overview:
+                self._health.record_failure(
+                    ProviderCapability.METADATA, "Malformed player metadata structure"
+                )
+                return None
+
+            latency_ms = (time.perf_counter() - start_t) * 1000.0
+            self._health.record_success(ProviderCapability.METADATA, latency_ms)
+            return overview
 
         except Exception as e:
-            self._health.record_failure(str(e))
+            self._health.record_failure(ProviderCapability.METADATA, str(e))
             return None
 
     def _parse_player_metadata(
         self, data: Dict[str, Any], video_id: str
-    ) -> VideoOverview:
+    ) -> Optional[VideoOverview]:
         details = data.get("videoDetails", {})
+        if not details or "title" not in details:
+            return None
+
         title = details.get("title", "Untitled")
         channel = details.get("author", "Unknown")
         channel_id = details.get("channelId")
@@ -348,8 +377,12 @@ class InnerTubeProvider(
         self,
         video_id: str,
         language: str = "en",
+        fallback_language: Optional[str] = None,
         translate_to: Optional[str] = None,
     ) -> Optional[TranscriptResult]:
+        if not self._health.can_execute(ProviderCapability.TRANSCRIPT):
+            return None
+
         start_t = time.perf_counter()
         clean_id = extract_video_id(video_id)
         cfg = self.CLIENT_CONFIGS["WEB"]
@@ -359,82 +392,111 @@ class InnerTubeProvider(
         }
 
         try:
-            async with httpx.AsyncClient(
-                headers=cfg["headers"],
-                timeout=settings.REQUEST_TIMEOUT,
-                http2=True,
-                follow_redirects=True,
-                proxy=settings.HTTP_PROXY,
-            ) as client:
-                resp = await client.post(self.PLAYER_URL, json=payload)
-                if resp.status_code != 200:
-                    self._health.record_failure(f"HTTP {resp.status_code}")
-                    return None
-
-                player_data = resp.json()
-                tracks = (
-                    player_data.get("captions", {})
-                    .get("playerCaptionsTracklistRenderer", {})
-                    .get("captionTracks", [])
+            client = await self.get_client()
+            resp = await client.post(
+                self.PLAYER_URL, headers=cfg["headers"], json=payload
+            )
+            if resp.status_code != 200:
+                self._health.record_failure(
+                    ProviderCapability.TRANSCRIPT, f"HTTP {resp.status_code}"
                 )
-                if not tracks:
-                    self._health.record_failure("No caption tracks in InnerTube")
-                    return None
+                return None
 
+            player_data = resp.json()
+            tracks = (
+                player_data.get("captions", {})
+                .get("playerCaptionsTracklistRenderer", {})
+                .get("captionTracks", [])
+            )
+            if not tracks:
+                self._health.record_failure(
+                    ProviderCapability.TRANSCRIPT, "No caption tracks in InnerTube"
+                )
+                return None
+
+            # Find matching track
+            matched_track = next(
+                (t for t in tracks if t.get("languageCode") == language),
+                None,
+            )
+            fallback_used = False
+
+            if not matched_track:
+                # Check prefix (e.g. en-US for en)
                 matched_track = next(
-                    (t for t in tracks if t.get("languageCode") == language),
+                    (
+                        t
+                        for t in tracks
+                        if t.get("languageCode", "").startswith(language)
+                    ),
                     None,
                 )
-                if not matched_track:
-                    matched_track = next(
-                        (
-                            t
-                            for t in tracks
-                            if t.get("languageCode", "").startswith(language)
-                        ),
-                        tracks[0],
-                    )
 
-                base_url = matched_track.get("baseUrl")
-                if not base_url:
-                    return None
-
-                is_generated = matched_track.get("kind") == "asr"
-
-                timedtext_url = base_url + "&fmt=json3"
-                if translate_to:
-                    timedtext_url += f"&tlang={translate_to}"
-
-                tt_resp = await client.get(timedtext_url)
-                if tt_resp.status_code != 200:
-                    self._health.record_failure(f"Timedtext HTTP {tt_resp.status_code}")
-                    return None
-
-                data = tt_resp.json()
-                segments = self._parse_json3_timedtext(data, clean_id)
-                if not segments:
-                    return None
-
-                full_text = " ".join(s.text for s in segments)
-                dur = segments[-1].end if segments else 0.0
-
-                latency_ms = (time.perf_counter() - start_t) * 1000.0
-                self._health.record_success(latency_ms)
-
-                return TranscriptResult(
-                    video_id=clean_id,
-                    language=translate_to or matched_track.get("languageCode", language),
-                    is_generated=is_generated,
-                    is_translated=bool(translate_to),
-                    total_segments=len(segments),
-                    total_words=len(full_text.split()),
-                    duration_seconds=dur,
-                    segments=segments,
-                    full_text=full_text,
+            if not matched_track and fallback_language:
+                matched_track = next(
+                    (
+                        t
+                        for t in tracks
+                        if t.get("languageCode") == fallback_language
+                        or t.get("languageCode", "").startswith(fallback_language)
+                    ),
+                    None,
                 )
+                if matched_track:
+                    fallback_used = True
+
+            if not matched_track:
+                # Requested language not available and no fallback matched
+                return None
+
+            base_url = matched_track.get("baseUrl")
+            if not base_url:
+                return None
+
+            is_generated = matched_track.get("kind") == "asr"
+            actual_lang = matched_track.get("languageCode", language)
+
+            timedtext_url = base_url + "&fmt=json3"
+            if translate_to:
+                timedtext_url += f"&tlang={translate_to}"
+                actual_lang = translate_to
+
+            tt_resp = await client.get(timedtext_url)
+            if tt_resp.status_code != 200:
+                self._health.record_failure(
+                    ProviderCapability.TRANSCRIPT, f"Timedtext HTTP {tt_resp.status_code}"
+                )
+                return None
+
+            data = tt_resp.json()
+            segments = self._parse_json3_timedtext(data, clean_id)
+            if not segments:
+                return None
+
+            full_text = " ".join(s.text for s in segments)
+            dur = segments[-1].end if segments else 0.0
+
+            latency_ms = (time.perf_counter() - start_t) * 1000.0
+            self._health.record_success(ProviderCapability.TRANSCRIPT, latency_ms)
+
+            return TranscriptResult(
+                video_id=clean_id,
+                language=actual_lang,
+                requested_language=language,
+                actual_language=actual_lang,
+                fallback_used=fallback_used,
+                fallback_language=fallback_language if fallback_used else None,
+                is_generated=is_generated,
+                is_translated=bool(translate_to),
+                total_segments=len(segments),
+                total_words=len(full_text.split()),
+                duration_seconds=dur,
+                segments=segments,
+                full_text=full_text,
+            )
 
         except Exception as e:
-            self._health.record_failure(str(e))
+            self._health.record_failure(ProviderCapability.TRANSCRIPT, str(e))
             return None
 
     def _parse_json3_timedtext(

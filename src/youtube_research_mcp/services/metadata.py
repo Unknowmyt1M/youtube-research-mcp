@@ -4,11 +4,12 @@ from youtube_research_mcp.cache import get_cache
 from youtube_research_mcp.config import settings
 from youtube_research_mcp.models.video import VideoOverview
 from youtube_research_mcp.services.router import get_router
+from youtube_research_mcp.utils.metrics import metrics
 from youtube_research_mcp.utils.security import extract_video_id
 
 
 class MetadataService:
-    """Video metadata and structural chapter analysis service."""
+    """Service for retrieving, parsing, and caching rich video metadata."""
 
     def __init__(self):
         self.router = get_router()
@@ -18,20 +19,31 @@ class MetadataService:
         clean_id = extract_video_id(video_id_or_url)
         cache_key = f"metadata:{clean_id}"
 
-        # Check Cache
-        cached = await self.cache.get(cache_key)
+        # 1. Check cache
+        cached, is_neg = await self.cache.get_with_status(cache_key)
+        if is_neg:
+            metrics.record_cache_hit(is_negative=True)
+            return None
         if cached:
-            return VideoOverview(**cached)
+            metrics.record_cache_hit()
+            return VideoOverview.model_validate(cached)
 
-        # Route to providers
-        overview = await self.router.route_metadata(clean_id)
-        if overview:
-            await self.cache.set(
+        metrics.record_cache_miss()
+
+        # 2. Fetch via router
+        overview = await self.router.get_video(clean_id)
+        if not overview:
+            # Negative cache short-lived
+            await self.cache.set_negative(
                 cache_key,
-                overview.model_dump(),
-                ttl_seconds=settings.CACHE_TTL_METADATA,
-                category="metadata",
+                reason="Video unavailable or private",
+                ttl=settings.NEGATIVE_CACHE_TTL,
             )
-            return overview
+            return None
 
-        return None
+        # 3. Store in cache
+        await self.cache.set(
+            cache_key, overview.model_dump(), ttl=settings.CACHE_TTL_METADATA
+        )
+
+        return overview

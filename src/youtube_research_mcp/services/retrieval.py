@@ -1,6 +1,9 @@
+from collections import OrderedDict
+import logging
 import math
 import re
-from typing import Any, List, Optional
+import time
+from typing import Any, Dict, List, Optional, Tuple
 import bm25s
 import numpy as np
 
@@ -9,6 +12,19 @@ from youtube_research_mcp.models.transcript import (
     TranscriptChunk,
     TranscriptSearchMatch,
 )
+
+logger = logging.getLogger(__name__)
+
+# Unicode-aware regex matching Latin, Devanagari (Hindi), CJK, Arabic, Cyrillic tokens
+MULTILINGUAL_TOKEN_PATTERN = re.compile(
+    r"[\u0900-\u097F]+|[\u4e00-\u9fff]+|[\u3040-\u30ff]+|[\u0600-\u06FF]+|[\u0400-\u04FF]+|[a-zA-Z0-9_-]+"
+)
+
+
+def tokenize_multilingual(text: str) -> List[str]:
+    """Tokenize multi-script text (Hindi, CJK, Arabic, Cyrillic, English)."""
+    return [t.lower() for t in MULTILINGUAL_TOKEN_PATTERN.findall(text)]
+
 
 _global_embedder: Optional[Any] = None
 _embedder_checked: bool = False
@@ -27,23 +43,22 @@ def get_embedder() -> Optional[Any]:
         from fastembed import TextEmbedding
 
         _global_embedder = TextEmbedding(model_name=settings.EMBEDDING_MODEL)
-    except (ImportError, OSError, Exception):
+    except (ImportError, OSError, Exception) as e:
+        logger.warning(f"Dense embedder unavailable ({e}), using lexical fallback.")
         _global_embedder = None
 
     return _global_embedder
 
 
-class SimpleTfidfEmbedder:
-    """Pure NumPy in-process TF-IDF vectorizer fallback when ONNX runtime is unavailable."""
+class LexicalTfidfFallback:
+    """Multilingual in-process TF-IDF vectorizer fallback when ONNX dense embedding is disabled."""
 
     def __init__(self):
         self.vocab: dict[str, int] = {}
         self.idf: np.ndarray = np.array([], dtype=np.float32)
 
     def fit_transform(self, docs: List[str]) -> np.ndarray:
-        tokenized_docs = [
-            re.findall(r"\b[a-zA-Z0-9_-]+\b", doc.lower()) for doc in docs
-        ]
+        tokenized_docs = [tokenize_multilingual(doc) for doc in docs]
         vocab_set = set()
         for doc in tokenized_docs:
             vocab_set.update(doc)
@@ -55,7 +70,6 @@ class SimpleTfidfEmbedder:
         if vocab_size == 0 or num_docs == 0:
             return np.zeros((num_docs, 1), dtype=np.float32)
 
-        # Document frequencies
         df = np.zeros(vocab_size, dtype=np.float32)
         tf_matrix = np.zeros((num_docs, vocab_size), dtype=np.float32)
 
@@ -68,16 +82,13 @@ class SimpleTfidfEmbedder:
             for idx in seen_in_doc:
                 df[idx] += 1
 
-        # Smooth IDF
         self.idf = np.log((num_docs + 1) / (df + 1)) + 1.0
-
         tfidf = tf_matrix * self.idf
-        # L2 normalize
         norms = np.linalg.norm(tfidf, axis=1, keepdims=True)
         return tfidf / np.maximum(norms, 1e-9)
 
     def transform(self, query: str) -> np.ndarray:
-        tokens = re.findall(r"\b[a-zA-Z0-9_-]+\b", query.lower())
+        tokens = tokenize_multilingual(query)
         vocab_size = len(self.vocab)
         if vocab_size == 0:
             return np.zeros(1, dtype=np.float32)
@@ -93,13 +104,14 @@ class SimpleTfidfEmbedder:
 
 
 class HybridRetrievalIndex:
-    """In-process hybrid retrieval engine combining dense vectors with BM25s sparse index."""
+    """In-process hybrid retrieval engine combining dense vectors (or TF-IDF) with BM25s sparse index."""
 
     def __init__(self, chunks: List[TranscriptChunk]):
         self.chunks = chunks
         self.corpus_texts = [c.text for c in chunks]
         self.embedder = get_embedder()
-        self.tfidf_fallback = None
+        self.tfidf_fallback: Optional[LexicalTfidfFallback] = None
+        self.is_dense_semantic: bool = self.embedder is not None
 
         if self.embedder is not None:
             try:
@@ -109,30 +121,29 @@ class HybridRetrievalIndex:
                 self.embeddings = self.embeddings / np.maximum(norms, 1e-9)
             except Exception:
                 self.embedder = None
+                self.is_dense_semantic = False
 
         if self.embedder is None:
-            # Use pure NumPy TF-IDF
-            self.tfidf_fallback = SimpleTfidfEmbedder()
+            self.tfidf_fallback = LexicalTfidfFallback()
             self.embeddings = self.tfidf_fallback.fit_transform(
                 self.corpus_texts
             )
 
-        # Build BM25 sparse index
-        corpus_tokens = bm25s.tokenize(self.corpus_texts, stopwords="en")
+        # Build BM25 sparse index with multilingual tokenization
+        tokenized_corpus = [tokenize_multilingual(t) for t in self.corpus_texts]
         self.bm25 = bm25s.BM25(k1=settings.BM25_K1, b=settings.BM25_B)
-        self.bm25.index(corpus_tokens)
+        self.bm25.index(tokenized_corpus)
 
     def search(
         self, query: str, top_k: int = 5, k_rrf: int = 60
     ) -> List[TranscriptSearchMatch]:
-        """Execute hybrid search using Reciprocal Rank Fusion."""
         if not self.chunks:
             return []
 
         num_docs = len(self.chunks)
         effective_k = min(num_docs, max(top_k * 3, 10))
 
-        # --- A. Dense / Cosine Similarity ---
+        # --- A. Dense / Lexical TF-IDF Similarity ---
         if self.embedder is not None:
             try:
                 query_embed = np.array(
@@ -155,7 +166,7 @@ class HybridRetrievalIndex:
         }
 
         # --- B. Sparse BM25 Retrieval ---
-        query_tokens = bm25s.tokenize([query], stopwords="en")
+        query_tokens = [tokenize_multilingual(query)]
         bm25_docs, bm25_scores = self.bm25.retrieve(
             query_tokens, k=min(num_docs, effective_k)
         )
@@ -166,7 +177,7 @@ class HybridRetrievalIndex:
                 bm25_rank_map[int(doc_idx)] = rank
 
         # --- C. Reciprocal Rank Fusion (RRF) ---
-        fused: List[tuple[float, int]] = []
+        fused: List[Tuple[float, int]] = []
         for idx in range(num_docs):
             r_dense = dense_rank_map.get(idx, 9999)
             r_sparse = bm25_rank_map.get(idx, 9999)
@@ -180,8 +191,6 @@ class HybridRetrievalIndex:
             fused.append((rrf_score, idx))
 
         fused.sort(key=lambda x: x[0], reverse=True)
-
-        # Normalize top score to 1.0 scale
         max_rrf = fused[0][0] if fused else 1.0
 
         matches: List[TranscriptSearchMatch] = []
@@ -204,3 +213,51 @@ class HybridRetrievalIndex:
             )
 
         return matches
+
+
+class RetrievalIndexCache:
+    """Bounded in-memory LRU cache with TTL for retrieval indexes."""
+
+    def __init__(
+        self,
+        max_size: int = settings.MAX_RETRIEVAL_INDEXES,
+        ttl_seconds: int = settings.INDEX_TTL_SECONDS,
+    ):
+        self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
+        self._cache: OrderedDict[str, Tuple[HybridRetrievalIndex, float]] = OrderedDict()
+
+    def get(self, video_id: str) -> Optional[HybridRetrievalIndex]:
+        now = time.time()
+        if video_id in self._cache:
+            index, created_at = self._cache[video_id]
+            if now - created_at <= self.ttl_seconds:
+                self._cache.move_to_end(video_id)
+                return index
+            else:
+                del self._cache[video_id]
+        return None
+
+    def put(self, video_id: str, index: HybridRetrievalIndex):
+        now = time.time()
+        if video_id in self._cache:
+            self._cache.move_to_end(video_id)
+        self._cache[video_id] = (index, now)
+
+        if len(self._cache) > self.max_size:
+            self._cache.popitem(last=False)  # Evict oldest
+
+
+_index_cache = RetrievalIndexCache()
+
+
+def get_retrieval_index(
+    video_id: str, chunks: List[TranscriptChunk]
+) -> HybridRetrievalIndex:
+    cached = _index_cache.get(video_id)
+    if cached:
+        return cached
+
+    new_index = HybridRetrievalIndex(chunks)
+    _index_cache.put(video_id, new_index)
+    return new_index

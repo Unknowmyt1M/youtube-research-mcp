@@ -1,4 +1,5 @@
 import pytest
+from youtube_research_mcp.models.research import ResearchDepth
 from youtube_research_mcp.services.search import SearchService
 from youtube_research_mcp.services.metadata import MetadataService
 from youtube_research_mcp.services.transcripts import TranscriptService
@@ -21,7 +22,6 @@ async def test_search_service_live():
 @pytest.mark.asyncio
 async def test_metadata_service_live():
     metadata_service = MetadataService()
-    # Test video (Veritasium quantum computer video or 3b1b)
     overview = await metadata_service.get_video_overview("dQw4w9WgXcQ")
 
     assert overview is not None
@@ -33,7 +33,6 @@ async def test_metadata_service_live():
 @pytest.mark.asyncio
 async def test_transcript_and_find_in_video_live():
     transcript_service = TranscriptService()
-    # Test with a known video with public captions
     video_id = "dQw4w9WgXcQ"
 
     transcript = await transcript_service.get_transcript(video_id, language="en")
@@ -41,6 +40,8 @@ async def test_transcript_and_find_in_video_live():
         assert transcript.video_id == "dQw4w9WgXcQ"
         assert len(transcript.segments) > 0
         assert transcript.total_words > 0
+        assert transcript.requested_language == "en"
+        assert transcript.actual_language in ["en", "en-US", "en-GB", "en-orig"]
 
         # Test pinpoint search in video
         matches = await transcript_service.find_in_video(
@@ -54,9 +55,10 @@ async def test_transcript_and_find_in_video_live():
 async def test_multi_video_research_engine_live():
     research_engine = ResearchEngine()
     result = await research_engine.research_topic(
-        query="what is quantum computing", max_videos=2, depth="quick"
+        query="what is quantum computing", depth=ResearchDepth.QUICK
     )
 
     assert result.topic == "what is quantum computing"
-    assert result.total_videos_analyzed > 0
-    assert len(result.sources) > 0
+    assert result.depth == ResearchDepth.QUICK
+    assert result.total_videos_analyzed == 2
+    assert len(result.sources) == 2

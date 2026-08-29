@@ -15,16 +15,22 @@ class Settings(BaseSettings):
     # Server settings
     MCP_SERVER_NAME: str = "youtube-research-mcp"
     LOG_LEVEL: str = "INFO"
-    MAX_CONCURRENCY: int = 5
+    MAX_CONCURRENCY: int = 10
     REQUEST_TIMEOUT: float = 15.0
 
     # Cache settings
     CACHE_BACKEND: Literal["sqlite", "memory", "redis"] = "sqlite"
     CACHE_DB_PATH: str = str(Path.home() / ".youtube_research_mcp" / "cache.db")
     REDIS_URL: str = "redis://localhost:6379/0"
+    CACHE_SCHEMA_VERSION: str = "v2"
     CACHE_TTL_SEARCH: int = 43200  # 12 hours
     CACHE_TTL_METADATA: int = 604800  # 7 days
     CACHE_TTL_TRANSCRIPT: int = 5184000  # 60 days
+    NEGATIVE_CACHE_TTL: int = 600  # 10 minutes for uncaptioned/missing videos
+
+    # Circuit Breaker settings
+    CIRCUIT_BREAKER_FAIL_THRESHOLD: int = 3
+    CIRCUIT_BREAKER_COOLDOWN_SECONDS: float = 30.0
 
     # Semantic & Retrieval settings
     USE_ONNX_EMBEDDER: bool = False
@@ -35,6 +41,13 @@ class Settings(BaseSettings):
     RRF_K: int = 60
     CHUNK_TARGET_WORDS: int = 180
     CHUNK_OVERLAP_WORDS: int = 30
+    MAX_RETRIEVAL_INDEXES: int = 100
+    INDEX_TTL_SECONDS: int = 3600
+
+    # Research Mode & Diversity settings
+    MAX_VIDEOS_PER_CHANNEL: int = 2
+    EVIDENCE_SIMILARITY_THRESHOLD: float = 0.75
+    DEFAULT_FALLBACK_LANGUAGE: Optional[str] = "en"
 
     # Optional Commercial Keys (Isolated Fallback Tiers)
     SUPADATA_API_KEY: Optional[str] = None
@@ -42,8 +55,10 @@ class Settings(BaseSettings):
     TRANSCRIPT_API_KEY: Optional[str] = None
     YOUTUBE_DATA_API_KEY: Optional[str] = None
 
-    # HTTP & Proxy
+    # HTTP & Connection Pooling
     HTTP_PROXY: Optional[str] = None
+    POOL_MAX_CONNECTIONS: int = 50
+    POOL_MAX_KEEPALIVE: int = 20
     USER_AGENT: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
