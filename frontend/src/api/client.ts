@@ -10,11 +10,16 @@ import {
 let serverBaseUrl = '';
 
 export const setServerBaseUrl = (url: string) => {
-  serverBaseUrl = url.replace(/\/+$/, '');
+  const clean = url.trim().replace(/\/+$/, '');
+  if (!clean || clean === window.location.origin || clean.includes(':5173')) {
+    serverBaseUrl = '';
+  } else {
+    serverBaseUrl = clean;
+  }
 };
 
 export const getServerBaseUrl = () => {
-  return serverBaseUrl || window.location.origin;
+  return serverBaseUrl || 'http://127.0.0.1:8000';
 };
 
 const request = async <T>(path: string, options?: RequestInit): Promise<T> => {
@@ -125,7 +130,7 @@ export const api = {
   },
 
   // Health check
-  checkHealth: async (): Promise<{ status: string; version: string; name: string }> => {
-    return request<{ status: string; version: string; name: string }>('/');
+  checkHealth: async (): Promise<any> => {
+    return request<any>('/api/admin/config');
   },
 };

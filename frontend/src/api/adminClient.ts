@@ -49,7 +49,8 @@ export interface AdminMetrics {
 }
 
 const adminRequest = async <T>(path: string, options?: RequestInit): Promise<T> => {
-  const base = getServerBaseUrl() || '';
+  const current = getServerBaseUrl();
+  const base = (current.includes(':8000') || current.includes(':5173')) ? '' : current;
   const res = await fetch(`${base}${path}`, {
     ...options,
     headers: {
