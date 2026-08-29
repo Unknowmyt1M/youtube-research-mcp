@@ -42,6 +42,8 @@ class ResearchEngine:
         max_videos_per_channel: int = settings.MAX_VIDEOS_PER_CHANNEL,
         language: str = "en",
         fallback_language: Optional[str] = settings.DEFAULT_FALLBACK_LANGUAGE,
+        published_after: Optional[str] = None,
+        published_before: Optional[str] = None,
     ) -> MultiVideoResearchResult:
         """Perform autonomous deep research across diverse candidate YouTube videos."""
         metrics.record_request("research")
@@ -54,7 +56,11 @@ class ResearchEngine:
 
         # 2. Search candidate videos (fetch extra to allow diversity filtering)
         search_resp = await self.search_service.search(
-            query=query, max_results=min(25, target_video_count * 3), language=language
+            query=query,
+            max_results=min(25, target_video_count * 3),
+            language=language,
+            published_after=published_after,
+            published_before=published_before,
         )
 
         # 3. Apply channel diversity filter

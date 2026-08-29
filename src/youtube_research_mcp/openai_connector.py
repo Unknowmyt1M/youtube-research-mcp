@@ -342,7 +342,13 @@ def register_openai_connector(mcp):
         except ValueError:
             depth = ResearchDepth.STANDARD
         max_per_ch = body.get("max_videos_per_channel", 2)
+        pub_after = body.get("published_after")
+        pub_before = body.get("published_before")
         res = await _research_engine.research_topic(
-            q, depth=depth, max_videos_per_channel=max_per_ch
+            q,
+            depth=depth,
+            max_videos_per_channel=max_per_ch,
+            published_after=pub_after,
+            published_before=pub_before,
         )
         return JSONResponse(res.model_dump(), headers=cors_headers)

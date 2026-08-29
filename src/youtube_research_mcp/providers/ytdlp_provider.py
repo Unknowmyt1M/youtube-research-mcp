@@ -327,11 +327,12 @@ class YtDlpProvider(
                     latency_ms = (time.perf_counter() - start_t) * 1000.0
                     self._health.record_success(ProviderCapability.TRANSCRIPT, latency_ms)
 
+                    clean_matched = matched_lang.replace("-orig", "")
                     return TranscriptResult(
                         video_id=clean_id,
-                        language=matched_lang,
+                        language=clean_matched,
                         requested_language=language,
-                        actual_language=matched_lang,
+                        actual_language=clean_matched,
                         fallback_used=fallback_used,
                         fallback_language=fallback_language if fallback_used else None,
                         is_generated=is_gen,

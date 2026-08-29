@@ -36,6 +36,12 @@ def register_research_tools(mcp):
         fallback_language: Optional[str] = Field(
             default="en", description="Fallback transcript language if requested language is unavailable"
         ),
+        published_after: Optional[str] = Field(
+            default=None, description="Optional ISO date filter (YYYY-MM-DD) to research only recent videos"
+        ),
+        published_before: Optional[str] = Field(
+            default=None, description="Optional ISO date filter (YYYY-MM-DD)"
+        ),
         ctx: Optional[Context] = None,
     ) -> Dict[str, Any]:
         if ctx:
@@ -49,5 +55,7 @@ def register_research_tools(mcp):
             max_videos_per_channel=max_videos_per_channel,
             language=language,
             fallback_language=fallback_language,
+            published_after=published_after,
+            published_before=published_before,
         )
         return res.model_dump()

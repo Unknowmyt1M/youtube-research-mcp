@@ -34,14 +34,22 @@ def register_find_in_video_tools(mcp):
         ),
         ctx: Optional[Context] = None,
     ) -> Dict[str, Any]:
+        clean_query = query.strip() if query else ""
+        if not clean_query:
+            return {
+                "status": "error",
+                "message": "Query parameter must be a non-empty string.",
+                "matches": [],
+            }
+
         if ctx:
             await ctx.info(
-                f"Searching for '{query}' in video {video_id} using Hybrid RRF"
+                f"Searching for '{clean_query}' in video {video_id} using Hybrid RRF"
             )
 
         matches = await _transcript_service.find_in_video(
             video_id_or_url=video_id,
-            query=query,
+            query=clean_query,
             max_results=max_results,
             language=language,
         )

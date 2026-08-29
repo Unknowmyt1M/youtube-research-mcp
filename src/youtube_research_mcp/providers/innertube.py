@@ -210,6 +210,10 @@ class InnerTubeProvider(
                     thumbs = vr.get("thumbnail", {}).get("thumbnails", [])
                     thumb_url = thumbs[-1].get("url") if thumbs else None
 
+                    pub_str = vr.get("publishedTimeText", {}).get("simpleText")
+                    if not pub_str and "publishedTimeText" in vr and "runs" in vr["publishedTimeText"]:
+                        pub_str = "".join(r.get("text", "") for r in vr["publishedTimeText"]["runs"])
+
                     results.append(
                         VideoSearchResult(
                             video_id=vid,
@@ -220,6 +224,7 @@ class InnerTubeProvider(
                             duration_seconds=dur_sec,
                             view_count=views_str,
                             view_count_num=views_num,
+                            published_time=pub_str,
                             description_snippet=snippet if snippet else None,
                             url=canonical_video_url(vid),
                             thumbnail=thumb_url,

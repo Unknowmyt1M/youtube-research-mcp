@@ -40,7 +40,11 @@ class TranscriptService:
     ) -> Optional[TranscriptResult]:
         target = video_id if video_id else video_id_or_url
         clean_id = extract_video_id(target)
-        cache_key = f"transcript:{clean_id}:{language}:{fallback_language}:{translate_to}"
+        clean_lang = language.strip().lower() if language and language.strip() else "en"
+        clean_fb = fallback_language.strip().lower() if fallback_language and fallback_language.strip() else None
+        clean_trans = translate_to.strip().lower() if translate_to and translate_to.strip() else None
+
+        cache_key = f"transcript:{clean_id}:{clean_lang}:{clean_fb}:{clean_trans}"
 
         # 1. Check cache
         cached, is_neg = await self.cache.get_with_status(cache_key)
@@ -56,9 +60,9 @@ class TranscriptService:
         # 2. Fetch via router
         res = await self.router.get_transcript(
             video_id=clean_id,
-            language=language,
-            fallback_language=fallback_language,
-            translate_to=translate_to,
+            language=clean_lang,
+            fallback_language=clean_fb,
+            translate_to=clean_trans,
         )
 
         if not res or not res.segments:
@@ -86,6 +90,10 @@ class TranscriptService:
         fallback_language: Optional[str] = settings.DEFAULT_FALLBACK_LANGUAGE,
         video_id: Optional[str] = None,
     ) -> List[TranscriptSearchMatch]:
+        clean_query = query.strip() if query else ""
+        if not clean_query:
+            return []
+
         start_t = time.perf_counter()
         target = video_id if video_id else video_id_or_url
         clean_id = extract_video_id(target)
