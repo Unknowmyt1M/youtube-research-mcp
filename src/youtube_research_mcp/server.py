@@ -5,6 +5,7 @@ import os
 import sys
 from fastmcp import FastMCP
 
+from youtube_research_mcp.admin_routes import register_admin_routes
 from youtube_research_mcp.cache import get_cache
 from youtube_research_mcp.config import settings
 from youtube_research_mcp.openai_connector import register_openai_connector
@@ -51,6 +52,9 @@ def create_server() -> FastMCP:
 
     # Register OpenAI Plugin / Custom Connector endpoints
     register_openai_connector(mcp)
+
+    # Register Admin Dashboard API routes
+    register_admin_routes(mcp)
 
     # FastMCP Health Resource
     @mcp.resource("youtube://health")

@@ -4,9 +4,10 @@ import { ResearchStudio } from './views/ResearchStudio';
 import { PinpointPlayer } from './views/PinpointPlayer';
 import { SearchExplorer } from './views/SearchExplorer';
 import { TelemetryView } from './views/TelemetryView';
+import { AdminDashboard } from './views/AdminDashboard';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<'research' | 'pinpoint' | 'search' | 'telemetry'>('research');
+  const [activeTab, setActiveTab] = useState<'research' | 'pinpoint' | 'search' | 'telemetry' | 'admin'>('research');
 
   return (
     <div className="min-h-screen bg-background text-gray-100 flex flex-col">
@@ -19,6 +20,7 @@ export function App() {
         {activeTab === 'pinpoint' && <PinpointPlayer />}
         {activeTab === 'search' && <SearchExplorer />}
         {activeTab === 'telemetry' && <TelemetryView />}
+        {activeTab === 'admin' && <AdminDashboard />}
       </main>
 
       {/* Footer */}

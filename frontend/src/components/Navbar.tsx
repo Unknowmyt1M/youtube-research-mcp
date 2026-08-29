@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Activity, Search, Compass, ExternalLink, Settings as SettingsIcon, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Sparkles, Activity, Search, Compass, ExternalLink, Settings as SettingsIcon, CheckCircle2, AlertCircle, ShieldAlert } from 'lucide-react';
 import { api, getServerBaseUrl, setServerBaseUrl } from '../api/client';
 
 interface NavbarProps {
-  activeTab: 'research' | 'pinpoint' | 'search' | 'telemetry';
-  setActiveTab: (tab: 'research' | 'pinpoint' | 'search' | 'telemetry') => void;
+  activeTab: 'research' | 'pinpoint' | 'search' | 'telemetry' | 'admin';
+  setActiveTab: (tab: 'research' | 'pinpoint' | 'search' | 'telemetry' | 'admin') => void;
 }
 
 interface NavItem {
-  id: 'research' | 'pinpoint' | 'search' | 'telemetry';
+  id: 'research' | 'pinpoint' | 'search' | 'telemetry' | 'admin';
   label: string;
   icon: any;
   badge?: string;
@@ -45,6 +45,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
     { id: 'pinpoint', label: 'Pinpoint Player', icon: Compass },
     { id: 'search', label: 'Search & Inspector', icon: Search },
     { id: 'telemetry', label: 'System Health', icon: Activity },
+    { id: 'admin', label: 'Admin Control', icon: ShieldAlert, badge: 'Root' },
   ];
 
   return (
