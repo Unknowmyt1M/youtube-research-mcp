@@ -113,19 +113,19 @@ def main():
     parser.add_argument(
         "--transport",
         choices=["stdio", "http", "sse"],
-        default=os.getenv("MCP_TRANSPORT", "http"),
+        default=os.getenv("MCP_TRANSPORT", settings.MCP_TRANSPORT),
         help="Transport protocol (default: http for ChatGPT / remote)",
     )
     parser.add_argument(
         "--host",
-        default=os.getenv("MCP_HOST", "0.0.0.0"),
+        default=os.getenv("MCP_HOST", settings.MCP_HOST),
         help="Host for HTTP / SSE transport (default: 0.0.0.0)",
     )
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.getenv("MCP_PORT", "8000")),
-        help="Port for HTTP / SSE transport (default: 8000)",
+        default=settings.effective_port,
+        help="Port for HTTP / SSE transport (checks PORT, MCP_PORT, default: 8000)",
     )
 
     args = parser.parse_args()

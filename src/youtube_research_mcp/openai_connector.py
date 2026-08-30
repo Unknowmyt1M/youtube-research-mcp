@@ -236,6 +236,31 @@ def get_openapi_schema(base_url: str) -> Dict[str, Any]:
 def register_openai_connector_routes(mcp):
     """Register ChatGPT Plugin, Custom GPT manifest, OpenAPI schema, and hardened REST endpoints."""
 
+    # 0. Root Service Info & Fast Cloud Health Check
+    @mcp.custom_route("/", methods=["GET", "OPTIONS"])
+    async def root_service_info(request: Request) -> Response:
+        cors = get_public_cors_headers(request)
+        if request.method == "OPTIONS":
+            return Response("", headers=cors)
+        return JSONResponse(
+            {
+                "status": "healthy",
+                "service": settings.MCP_SERVER_NAME,
+                "protocol": "mcp-2024-11-05",
+                "transport": "streamable-http",
+                "mcp_endpoint": "/mcp",
+                "docs": "/openapi.json",
+            },
+            headers=cors,
+        )
+
+    @mcp.custom_route("/health", methods=["GET", "OPTIONS"])
+    async def health_check_route(request: Request) -> Response:
+        cors = get_public_cors_headers(request)
+        if request.method == "OPTIONS":
+            return Response("", headers=cors)
+        return JSONResponse({"status": "healthy", "service": settings.MCP_SERVER_NAME}, headers=cors)
+
     # 1. ChatGPT Plugin Manifest
     @mcp.custom_route("/.well-known/ai-plugin.json", methods=["GET", "OPTIONS"])
     async def ai_plugin_manifest(request: Request) -> Response:

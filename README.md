@@ -128,6 +128,7 @@ Multi-video research discovery across diverse channels with near-duplicate claim
 
 ## 📦 Installation & Setup
 
+### Local Setup
 ```bash
 # Clone the repository
 git clone https://github.com/Unknowmyt1M/youtube-research-mcp.git
@@ -136,22 +137,103 @@ cd youtube-research-mcp
 # Install dependencies using uv (recommended)
 uv sync
 
-# Run the MCP Server (Streamable HTTP for ChatGPT)
+# Run the MCP Server locally over Streamable HTTP
 uv run python -m youtube_research_mcp.server --transport http --port 8000
 ```
 
 ---
 
-## 🤖 Client Configuration
+## 🚂 Public Cloud Deployment (Railway-First)
 
-### ChatGPT MCP Custom Connector
-Set URL in ChatGPT Developer Settings:
-```
-http://localhost:8000/mcp
-```
-*(Or your public Cloudflare Tunnel URL: `https://<your-tunnel>.trycloudflare.com/mcp`)*
+Deploy this server to **Railway**, **Render**, **Fly.io**, or **Docker** to expose a unified remote endpoint for all your AI agents and coding tools:
 
-### Claude Desktop / Cursor (`claude_desktop_config.json`)
+```
+https://<your-production-domain>/mcp
+```
+
+### 1. One-Click Railway Deployment
+1. Connect your GitHub repository to [Railway](https://railway.com).
+2. Railway detects [`Dockerfile`](file:///d:/Projects/MCP/AI-Youtube/Dockerfile) and [`railway.json`](file:///d:/Projects/MCP/AI-Youtube/railway.json) automatically.
+3. Configure Environment Variables (optional: `ADMIN_API_KEY`, `REDIS_URL`).
+4. Railway automatically sets dynamic `$PORT` and routes container traffic.
+5. In **Networking**, click **Generate Domain** (e.g. `https://youtube-mcp-production.up.railway.app`).
+6. Verify Health: `GET https://<your-domain>/` (returns HTTP 200).
+
+---
+
+## 🤖 Remote & Local Client Configuration
+
+Use your hosted endpoint `https://<your-domain>/mcp` across any MCP-compatible AI client:
+
+### 1. OpenCode (`opencode.json` / `opencode.jsonc`)
+```json
+{
+  "mcp": {
+    "servers": {
+      "youtube-research": {
+        "type": "remote",
+        "url": "https://<your-domain>/mcp"
+      }
+    }
+  }
+}
+```
+
+### 2. Cursor (`~/.cursor/mcp.json`)
+```json
+{
+  "mcpServers": {
+    "youtube-research": {
+      "url": "https://<your-domain>/mcp"
+    }
+  }
+}
+```
+
+### 3. VS Code / GitHub Copilot Agent Mode (`.vscode/mcp.json`)
+```json
+{
+  "servers": {
+    "youtube-research": {
+      "type": "http",
+      "url": "https://<your-domain>/mcp"
+    }
+  }
+}
+```
+
+### 4. Cline & Roo Code (`cline_mcp_settings.json`)
+```json
+{
+  "mcpServers": {
+    "youtube-research": {
+      "type": "streamableHttp",
+      "url": "https://<your-domain>/mcp",
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+### 5. Windsurf (`~/.codeium/windsurf/mcp_config.json`)
+```json
+{
+  "mcpServers": {
+    "youtube-research": {
+      "serverUrl": "https://<your-domain>/mcp"
+    }
+  }
+}
+```
+
+### 6. ChatGPT Custom MCP Connector
+In ChatGPT Developer / Custom Actions Settings:
+```
+https://<your-domain>/mcp
+```
+
+### 7. Claude Desktop Local Mode (`claude_desktop_config.json`)
 ```json
 {
   "mcpServers": {
@@ -159,7 +241,7 @@ http://localhost:8000/mcp
       "command": "uv",
       "args": [
         "--directory",
-        "d:/Projects/MCP/AI-Youtube",
+        "/path/to/youtube-research-mcp",
         "run",
         "python",
         "-m",

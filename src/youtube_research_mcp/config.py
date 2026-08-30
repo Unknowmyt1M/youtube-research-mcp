@@ -18,6 +18,17 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     MAX_CONCURRENCY: int = 10
     REQUEST_TIMEOUT: float = 15.0
+    PORT: Optional[int] = None  # Dynamic cloud platform port (Railway / Render / Fly.io)
+    MCP_PORT: int = 8000
+    MCP_HOST: str = "0.0.0.0"
+    MCP_TRANSPORT: str = "http"
+
+    @property
+    def effective_port(self) -> int:
+        """Returns cloud PORT if set, otherwise MCP_PORT, defaulting to 8000."""
+        if self.PORT is not None:
+            return self.PORT
+        return self.MCP_PORT
 
     # Security & Admin Authentication (SEC-001)
     ADMIN_API_KEY: Optional[str] = None  # If set, required for /api/admin/* endpoints
