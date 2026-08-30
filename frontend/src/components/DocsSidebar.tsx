@@ -11,7 +11,8 @@ import {
   ChevronDown, 
   ChevronRight, 
   ExternalLink,
-  Search
+  Search,
+  X
 } from 'lucide-react';
 import { DOCS_CATEGORIES } from '../docs/docsRegistry';
 
@@ -74,8 +75,33 @@ export function DocsSidebar({
 
   const content = (
     <div className="flex flex-col h-full bg-surface border-r border-border">
+      {/* Mobile Drawer Top Bar with Icon Mark */}
+      <div className="lg:hidden p-4 border-b border-border/80 flex items-center justify-between bg-surface-raised">
+        <div className="flex items-center space-x-2">
+          <div className="w-7 h-7 rounded-lg bg-surface border border-border flex items-center justify-center p-0.5 shadow-glow-primary">
+            <img
+              src="/nexora-icon-mark.png"
+              alt="Nexora Icon Mark"
+              className="w-full h-full object-contain"
+            />
+          </div>
+          <div>
+            <div className="font-bold text-sm text-white font-sans">NEXORA</div>
+            <div className="text-[10px] text-gray-400 font-mono">Documentation</div>
+          </div>
+        </div>
+        <button
+          onClick={onCloseMobile}
+          className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-surface transition-colors active:scale-95 cursor-pointer"
+          title="Close Navigation"
+          aria-label="Close navigation drawer"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
       {/* Quick Search trigger in sidebar */}
-      <div className="p-4 border-b border-border/80">
+      <div className="p-3.5 sm:p-4 border-b border-border/80">
         <button
           onClick={onOpenSearch}
           className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-surface-raised hover:bg-surface-hover border border-border text-gray-400 hover:text-gray-200 transition-all text-xs font-sans group cursor-pointer"
@@ -91,14 +117,14 @@ export function DocsSidebar({
       </div>
 
       {/* Categories tree */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5 overscroll-contain">
         {DOCS_CATEGORIES.map((cat) => {
           const isOpen = openCategories[cat.id] ?? true;
           return (
             <div key={cat.id} className="space-y-1">
               <button
                 onClick={() => toggleCategory(cat.id)}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider text-gray-400 hover:text-gray-200 hover:bg-surface-raised transition-colors group"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider text-gray-400 hover:text-gray-200 hover:bg-surface-raised transition-colors group cursor-pointer"
               >
                 <div className="flex items-center space-x-2">
                   {getIcon(cat.icon)}
@@ -122,7 +148,7 @@ export function DocsSidebar({
                           onSelectPage(page.id);
                           onCloseMobile?.();
                         }}
-                        className={`w-full text-left flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                        className={`w-full text-left flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                           isActive
                             ? 'bg-primary-600/15 border border-primary-500/30 text-primary-300 font-semibold shadow-sm'
                             : 'text-gray-400 hover:text-gray-100 hover:bg-surface-raised/70 border border-transparent'
@@ -131,7 +157,7 @@ export function DocsSidebar({
                         <span className="truncate">{page.title}</span>
                         {page.badge && (
                           <span
-                            className={`text-[9px] font-mono uppercase px-1.5 py-0.2 rounded font-semibold ${
+                            className={`text-[9px] font-mono uppercase px-1.5 py-0.2 rounded font-semibold shrink-0 ml-1.5 ${
                               page.badge === 'Core'
                                 ? 'bg-primary-500/20 text-primary-300 border border-primary-500/30'
                                 : page.badge === 'Popular'
@@ -160,19 +186,19 @@ export function DocsSidebar({
             href="https://github.com/Unknowmyt1M/youtube-research-mcp"
             target="_blank"
             rel="noreferrer"
-            className="flex items-center justify-between px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white hover:bg-surface-raised transition-colors"
+            className="flex items-center justify-between px-3 py-2 rounded-lg text-xs text-gray-400 hover:text-white hover:bg-surface-raised transition-colors"
           >
             <span>GitHub Repository</span>
-            <ExternalLink className="w-3 h-3 text-gray-500" />
+            <ExternalLink className="w-3.5 h-3.5 text-gray-500" />
           </a>
           <a
             href="https://youtube-research-mcp-production.up.railway.app/openapi.json"
             target="_blank"
             rel="noreferrer"
-            className="flex items-center justify-between px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white hover:bg-surface-raised transition-colors"
+            className="flex items-center justify-between px-3 py-2 rounded-lg text-xs text-gray-400 hover:text-white hover:bg-surface-raised transition-colors"
           >
             <span>Live OpenAPI Spec</span>
-            <ExternalLink className="w-3 h-3 text-gray-500" />
+            <ExternalLink className="w-3.5 h-3.5 text-gray-500" />
           </a>
         </div>
       </nav>
@@ -186,11 +212,11 @@ export function DocsSidebar({
         {content}
       </aside>
 
-      {/* Mobile Drawer (Collapsible) */}
+      {/* Mobile Drawer (Collapsible with smooth overlay) */}
       {isOpenMobile && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
           <div
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
             onClick={onCloseMobile}
           />
           <div className="relative w-80 max-w-[85vw] h-full shadow-2xl z-10 animate-in slide-in-from-left duration-200">
