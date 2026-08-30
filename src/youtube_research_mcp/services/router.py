@@ -43,6 +43,14 @@ class ProviderRouter:
             self.innertube,
             self.ytdlp,
         ]
+        self.free_transcript_providers: List[BaseTranscriptProvider] = [
+            self.yta,
+            self.ytdlp,
+            self.innertube,
+        ]
+        self.commercial_providers: List[BaseTranscriptProvider] = [
+            self.commercial,
+        ]
         self.transcript_providers: List[BaseTranscriptProvider] = [
             self.yta,
             self.ytdlp,
@@ -154,10 +162,16 @@ class ProviderRouter:
 
         async def _do_transcript():
             metrics.record_request("transcript")
-            candidates = self._get_adaptive_providers(
-                self.transcript_providers, ProviderCapability.TRANSCRIPT
+            
+            # Step 1: Free Providers Tier (Adaptive sorting amongst free providers only)
+            free_candidates = self._get_adaptive_providers(
+                self.free_transcript_providers, ProviderCapability.TRANSCRIPT
             )
-            for provider in candidates:
+            
+            content_missing_confirmed = False
+            network_error_occurred = False
+
+            for provider in free_candidates:
                 try:
                     res = await provider.get_transcript(
                         video_id=video_id,
@@ -167,10 +181,46 @@ class ProviderRouter:
                     )
                     if res and res.segments:
                         return res
+
+                    # Inspect failure reason to classify
+                    breaker = provider.health.breakers.get(ProviderCapability.TRANSCRIPT)
+                    reason = (breaker.last_failure_reason if breaker else "") or ""
+                    
+                    if any(c in reason for c in ["NoTranscriptFound", "TranscriptsDisabled", "VideoUnavailable", "InvalidVideoId", "No captions found"]):
+                        content_missing_confirmed = True
+                    if any(n in reason for n in ["IpBlocked", "RequestBlocked", "PoTokenRequired", "429", "timed out", "NetworkError", "Connection"]):
+                        network_error_occurred = True
+
                 except Exception as e:
+                    network_error_occurred = True
                     logger.warning(
-                        f"Transcript provider '{provider.name}' failed for {video_id}: {e}."
+                        f"Free transcript provider '{provider.name}' failed for {video_id}: {e}."
                     )
+
+            # Step 2: Cost Guard - If free tier confirmed NO_CAPTIONS without network block, skip commercial
+            if content_missing_confirmed and not network_error_occurred:
+                logger.info(
+                    f"Video {video_id} confirmed to have no captions. Skipping commercial fallback to protect quota."
+                )
+                return None
+
+            # Step 3: Commercial Fallback (LAST RESORT ONLY)
+            if self.commercial.health.can_execute(ProviderCapability.TRANSCRIPT):
+                logger.info(
+                    f"Free transcript providers exhausted due to network challenge for {video_id}. Attempting LAST-RESORT commercial fallback."
+                )
+                try:
+                    res = await self.commercial.get_transcript(
+                        video_id=video_id,
+                        language=language,
+                        fallback_language=fallback_language,
+                        translate_to=translate_to,
+                    )
+                    if res and res.segments:
+                        return res
+                except Exception as e:
+                    logger.error(f"Commercial fallback failed for {video_id}: {e}.")
+
             return None
 
         return await self.flight.execute(flight_key, _do_transcript)
