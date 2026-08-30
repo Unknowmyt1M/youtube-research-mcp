@@ -72,7 +72,7 @@ class YtDlpProvider(
             "no_warnings": True,
             "extractor_args": {
                 "youtube": {
-                    "player_client": ["mweb", "ios", "android"],
+                    "player_client": ["ios", "mweb", "android"],
                 }
             },
         }
@@ -284,7 +284,7 @@ class YtDlpProvider(
                 matched_lang = translate_to
 
             client = await self.get_client()
-            res = await client.get(track_url)
+            res = await client.get(track_url, timeout=30.0)
             if res.status_code == 200:
                 data = res.json()
                 segments = self._parse_json3(data, clean_id)
