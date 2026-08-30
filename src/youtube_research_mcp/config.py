@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Global configuration for YouTube Research MCP."""
+    """Global configuration for Nexora MCP (legacy: YouTube Research MCP)."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -13,7 +13,13 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Server & Transport settings
+    # Master Branding & Metadata
+    BRAND_NAME: str = "Nexora"
+    PRODUCT_NAME: str = "Nexora MCP"
+    TAGLINE: str = "Understand Everything. Instantly."
+    DESCRIPTION: str = "AI-powered YouTube and video intelligence for AI agents."
+
+    # Server & Transport settings (legacy identifier preserved for backwards compatibility)
     MCP_SERVER_NAME: str = "youtube-research-mcp"
     LOG_LEVEL: str = "INFO"
     MAX_CONCURRENCY: int = 10

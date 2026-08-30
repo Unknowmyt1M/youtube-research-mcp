@@ -1,14 +1,31 @@
-# YouTube Research MCP — Production-Grade Research Engine
+# Nexora — AI-Powered Video Intelligence Platform
 
-[![CI](https://img.shields.io/badge/tests-121%2B%20passed-brightgreen.svg)](tests/)
+> **Understand Everything. Instantly.**
+
+[![CI](https://img.shields.io/badge/tests-122%2B%20passed-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![FastMCP](https://img.shields.io/badge/MCP-FastMCP%202.0-orange.svg)](https://github.com/jlowin/fastmcp)
-[![ChatGPT Compatible](https://img.shields.io/badge/ChatGPT-Streamable%20HTTP-green.svg)](https://platform.openai.com)
+[![ChatGPT & Claude Compatible](https://img.shields.io/badge/AI%20Clients-Streamable%20HTTP-green.svg)](https://modelcontextprotocol.io)
 
-A high-performance, model-agnostic, zero-API-key **Model Context Protocol (MCP)** server that turns YouTube into a structured, verifiable knowledge base for AI agents with deterministic cross-lingual retrieval.
+**Nexora** is a high-performance, model-agnostic intelligence platform for deep video, transcript, and multimodal research. **Nexora MCP** connects AI pair programmers, reasoning agents, and LLMs (ChatGPT, Claude, Gemini, Cursor, Codex, OpenCode) directly to YouTube as a structured, verifiable knowledge base with zero API keys required.
 
-Designed specifically for AI pair programmers and reasoning models (ChatGPT, Claude, Gemini, Cursor, Codex, OpenCode).
+> [!NOTE]
+> **Branding & Migration Notice**: This project is transitioning to the **Nexora** master brand. During this transition period, the repository and Python package maintain `youtube-research-mcp` as the backwards-compatible legacy technical identifier. All existing client configurations and tool schemas remain 100% compatible.
+
+---
+
+## 🌐 Live Remote MCP Endpoint
+
+Connect your favorite MCP client immediately without local installation:
+
+```text
+https://youtube-research-mcp-production.up.railway.app/mcp
+```
+
+- **Protocol**: `mcp-2024-11-05`
+- **Transport**: `Streamable HTTP / SSE`
+- **Authentication**: None required for public MCP tool access (Rate-limited Token Bucket protected)
 
 ---
 

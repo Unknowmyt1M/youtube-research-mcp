@@ -1,186 +1,157 @@
-import React, { useState, useEffect } from 'react';
-import { Sparkles, Activity, Search, Compass, ExternalLink, Settings as SettingsIcon, CheckCircle2, AlertCircle, ShieldAlert } from 'lucide-react';
-import { api, getServerBaseUrl, setServerBaseUrl } from '../api/client';
+import { Search, Menu, Sparkles } from 'lucide-react';
 
 interface NavbarProps {
-  activeTab: 'research' | 'pinpoint' | 'search' | 'telemetry' | 'admin';
-  setActiveTab: (tab: 'research' | 'pinpoint' | 'search' | 'telemetry' | 'admin') => void;
+  currentView: 'docs' | 'explorer';
+  setCurrentView: (view: 'docs' | 'explorer') => void;
+  onOpenSearch: () => void;
+  onToggleMobileSidebar: () => void;
+  onNavigatePage: (pageId: string) => void;
 }
 
-interface NavItem {
-  id: 'research' | 'pinpoint' | 'search' | 'telemetry' | 'admin';
-  label: string;
-  icon: any;
-  badge?: string;
-}
-
-export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
-  const [isOnline, setIsOnline] = useState<boolean | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
-  const [customUrl, setCustomUrl] = useState(getServerBaseUrl());
-
-  const checkStatus = async () => {
-    try {
-      await api.checkHealth();
-      setIsOnline(true);
-    } catch {
-      setIsOnline(false);
-    }
-  };
-
-  useEffect(() => {
-    checkStatus();
-    const interval = setInterval(checkStatus, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleSaveUrl = () => {
-    setServerBaseUrl(customUrl);
-    setShowSettings(false);
-    checkStatus();
-  };
-
-  const navItems: NavItem[] = [
-    { id: 'research', label: 'Research Studio', icon: Sparkles, badge: 'Phase 2' },
-    { id: 'pinpoint', label: 'Pinpoint Player', icon: Compass },
-    { id: 'search', label: 'Search & Inspector', icon: Search },
-    { id: 'telemetry', label: 'System Health', icon: Activity },
-    { id: 'admin', label: 'Admin Control', icon: ShieldAlert, badge: 'Root' },
-  ];
-
+export function Navbar({
+  currentView,
+  setCurrentView,
+  onOpenSearch,
+  onToggleMobileSidebar,
+  onNavigatePage,
+}: NavbarProps) {
   return (
-    <header className="sticky top-0 z-50 border-b border-border bg-surface/90 backdrop-blur-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo & Title */}
-          <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-red-600 to-violet-600 p-[1px] flex items-center justify-center glow-red shadow-lg">
-              <div className="w-full h-full bg-background rounded-[11px] flex items-center justify-center">
-                <span className="text-red-500 font-bold text-lg">▶</span>
-              </div>
+    <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-background/80 backdrop-blur-md">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        {/* Left: Brand Logo */}
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={onToggleMobileSidebar}
+            className="lg:hidden p-2 rounded-lg text-gray-400 hover:text-white hover:bg-surface transition-colors"
+            title="Toggle Menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
+          <div
+            onClick={() => {
+              setCurrentView('docs');
+              onNavigatePage('what-is-nexora');
+            }}
+            className="flex items-center space-x-2.5 cursor-pointer group"
+          >
+            {/* Nexora Monochrome Icon Logo */}
+            <div className="w-8 h-8 rounded-xl bg-surface border border-border/80 flex items-center justify-center p-1 shadow-sm group-hover:border-primary-500/50 transition-all">
+              <img
+                src="/nexora-monochrome.png"
+                alt="Nexora Monochrome Logo"
+                className="w-full h-full object-contain filter brightness-100"
+              />
             </div>
             <div>
-              <div className="flex items-center space-x-2">
-                <span className="font-bold text-base tracking-tight text-white">YouTube Research</span>
-                <span className="text-xs px-2 py-0.5 rounded-full font-mono bg-red-500/10 text-red-400 border border-red-500/20">
+              <div className="flex items-center space-x-1.5">
+                <span className="font-bold text-lg text-white font-sans tracking-tight group-hover:text-primary-300 transition-colors">
+                  NEXORA
+                </span>
+                <span className="text-[10px] font-mono font-semibold px-1.5 py-0.2 rounded bg-primary-500/20 text-primary-300 border border-primary-500/30 uppercase">
                   MCP v2.0
                 </span>
               </div>
-              <p className="text-[11px] text-gray-400 font-mono hidden sm:block">Model-Agnostic Knowledge Engine</p>
+              <span className="text-[10px] text-gray-400 font-mono hidden sm:block">
+                Understand Everything. Instantly.
+              </span>
             </div>
-          </div>
-
-          {/* Center Tabs */}
-          <nav className="hidden md:flex items-center space-x-1 p-1 bg-background/80 rounded-xl border border-border">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    isActive
-                      ? 'bg-surface-raised text-white shadow-sm border border-border text-red-400'
-                      : 'text-gray-400 hover:text-gray-200 hover:bg-surface/50'
-                  }`}
-                >
-                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-red-400' : ''}`} />
-                  <span>{item.label}</span>
-                  {item.badge && (
-                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-500/20 text-red-300 font-mono">
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-
-          {/* Right Status & GitHub */}
-          <div className="flex items-center space-x-3">
-            {/* Online Status Badge */}
-            <div
-              onClick={() => setShowSettings(!showSettings)}
-              className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-background border border-border cursor-pointer hover:border-gray-600 transition"
-              title="Click to configure Backend URL"
-            >
-              <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}`} />
-              <span className="text-gray-300">{isOnline ? 'MCP Live' : 'Disconnected'}</span>
-              <SettingsIcon className="w-3 h-3 text-gray-500 ml-1" />
-            </div>
-
-            {/* GitHub Link */}
-            <a
-              href="https://github.com/Unknowmyt1M/youtube-research-mcp"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-raised text-gray-300 hover:text-white border border-border hover:border-gray-600 transition"
-            >
-              <span>GitHub</span>
-              <ExternalLink className="w-3 h-3 text-gray-400" />
-            </a>
           </div>
         </div>
 
-        {/* Mobile Navigation Tabs */}
-        <div className="flex md:hidden overflow-x-auto py-2 space-x-1 border-t border-border/50">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs whitespace-nowrap ${
-                  isActive ? 'bg-surface-raised text-red-400 border border-border' : 'text-gray-400'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
+        {/* Center: Search trigger & Nav items */}
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={onOpenSearch}
+            className="flex items-center space-x-3 px-3.5 py-1.5 rounded-xl bg-surface hover:bg-surface-raised border border-border text-gray-400 hover:text-gray-200 transition-all text-xs font-sans group cursor-pointer"
+          >
+            <Search className="w-3.5 h-3.5 text-gray-500 group-hover:text-primary-400 transition-colors" />
+            <span className="hidden sm:inline">Search docs, tools, API...</span>
+            <span className="sm:hidden">Search...</span>
+            <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-surface-raised border border-border text-[10px] text-gray-400 font-mono">
+              ⌘K
+            </kbd>
+          </button>
+
+          <nav className="hidden md:flex items-center space-x-1 text-xs font-medium">
+            <button
+              onClick={() => {
+                setCurrentView('docs');
+                onNavigatePage('what-is-nexora');
+              }}
+              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                currentView === 'docs'
+                  ? 'text-white bg-surface border border-border'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-surface/50'
+              }`}
+            >
+              Documentation
+            </button>
+
+            <button
+              onClick={() => {
+                setCurrentView('docs');
+                onNavigatePage('tool-youtube-find-in-video');
+              }}
+              className="px-3 py-1.5 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-surface/50 transition-colors cursor-pointer"
+            >
+              MCP Tools
+            </button>
+
+            <button
+              onClick={() => {
+                setCurrentView('docs');
+                onNavigatePage('api-overview');
+              }}
+              className="px-3 py-1.5 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-surface/50 transition-colors cursor-pointer"
+            >
+              REST API
+            </button>
+
+            <button
+              onClick={() => setCurrentView('explorer')}
+              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center space-x-1.5 cursor-pointer ${
+                currentView === 'explorer'
+                  ? 'text-cyan-300 bg-cyan-950/30 border border-cyan-500/40 shadow-glow-cyan'
+                  : 'text-cyan-400 hover:text-cyan-300 hover:bg-surface/50'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Live Explorer</span>
+            </button>
+          </nav>
+        </div>
+
+        {/* Right: Horizontal Lockup & Live Status & GitHub */}
+        <div className="flex items-center space-x-3">
+          {/* Horizontal Lockup Logo */}
+          <div className="hidden lg:flex items-center px-2.5 py-1 rounded-xl bg-surface border border-border/80 hover:border-primary-500/40 transition-colors shadow-sm">
+            <img
+              src="/nexora-horizontal-lockup.png"
+              alt="Nexora Horizontal Lockup"
+              className="h-4 w-auto object-contain opacity-90 hover:opacity-100 transition-opacity"
+            />
+          </div>
+
+          {/* Live Cloud Status */}
+          <div className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-emerald-950/40 border border-emerald-500/30 text-[11px] font-mono text-emerald-300">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Live on Railway</span>
+          </div>
+
+          <a
+            href="https://github.com/Unknowmyt1M/youtube-research-mcp"
+            target="_blank"
+            rel="noreferrer"
+            className="p-2 rounded-xl bg-surface hover:bg-surface-raised border border-border text-gray-300 hover:text-white transition-colors"
+            title="GitHub Repository"
+          >
+            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+              <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+            </svg>
+          </a>
         </div>
       </div>
-
-      {/* Settings Modal Dropdown */}
-      {showSettings && (
-        <div className="absolute right-6 top-18 w-80 p-4 rounded-xl glass-panel shadow-2xl z-50 animate-in fade-in slide-in-from-top-2">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Backend Server Connection</h4>
-            {isOnline ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-red-400" />
-            )}
-          </div>
-          <div className="space-y-2">
-            <label className="text-[11px] text-gray-400">FastMCP / REST Endpoint URL</label>
-            <input
-              type="text"
-              value={customUrl}
-              onChange={(e) => setCustomUrl(e.target.value)}
-              placeholder="http://127.0.0.1:8000"
-              className="w-full px-3 py-1.5 text-xs bg-background border border-border rounded-lg text-white font-mono focus:outline-none focus:border-red-500"
-            />
-            <div className="flex justify-end space-x-2 pt-2">
-              <button
-                onClick={() => setShowSettings(false)}
-                className="px-3 py-1 text-xs text-gray-400 hover:text-gray-200"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveUrl}
-                className="px-3 py-1 text-xs bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium transition"
-              >
-                Save & Connect
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </header>
   );
-};
+}

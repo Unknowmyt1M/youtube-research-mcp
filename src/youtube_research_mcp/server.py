@@ -72,7 +72,7 @@ def create_server() -> FastMCP:
         summary = metrics.get_summary()
 
         lines = [
-            "# YouTube Research MCP — System Health & Telemetry",
+            f"# {settings.PRODUCT_NAME} ({settings.MCP_SERVER_NAME}) — System Health & Telemetry",
             "",
             f"**Uptime**: {summary['uptime_seconds']}s | **Total Requests**: {sum(summary['requests'].values())}",
             f"**Cache Hit Rate**: {summary['cache']['hit_rate_pct']}% ({summary['cache']['hits']} hits, {summary['cache']['misses']} misses, {summary['cache']['negative_hits']} negative hits)",

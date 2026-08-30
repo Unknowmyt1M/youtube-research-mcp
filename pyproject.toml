@@ -1,7 +1,7 @@
 [project]
 name = "youtube-research-mcp"
 version = "0.1.0"
-description = "Fast, reliable, API-keyless YouTube research and knowledge extraction MCP server"
+description = "Nexora MCP — AI-powered intelligence platform for deep video, transcript, and multimodal research"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -33,6 +33,7 @@ dev = [
 ]
 
 [project.scripts]
+nexora = "youtube_research_mcp.server:main"
 youtube-research-mcp = "youtube_research_mcp.server:main"
 
 [build-system]

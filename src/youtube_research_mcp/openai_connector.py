@@ -65,8 +65,8 @@ def get_openapi_schema(base_url: str) -> Dict[str, Any]:
     return {
         "openapi": "3.1.0",
         "info": {
-            "title": "YouTube Research Engine",
-            "description": "Fast, reliable, API-keyless YouTube knowledge extraction and deep research for AI agents.",
+            "title": "Nexora Research Engine",
+            "description": "Fast, reliable, API-keyless YouTube and video knowledge extraction and deep research for AI agents.",
             "version": "v2.0.0",
         },
         "servers": [{"url": base_url}],
@@ -245,7 +245,9 @@ def register_openai_connector_routes(mcp):
         return JSONResponse(
             {
                 "status": "healthy",
-                "service": settings.MCP_SERVER_NAME,
+                "service": settings.PRODUCT_NAME,
+                "legacy_name": settings.MCP_SERVER_NAME,
+                "tagline": settings.TAGLINE,
                 "protocol": "mcp-2024-11-05",
                 "transport": "streamable-http",
                 "mcp_endpoint": "/mcp",
@@ -259,7 +261,14 @@ def register_openai_connector_routes(mcp):
         cors = get_public_cors_headers(request)
         if request.method == "OPTIONS":
             return Response("", headers=cors)
-        return JSONResponse({"status": "healthy", "service": settings.MCP_SERVER_NAME}, headers=cors)
+        return JSONResponse(
+            {
+                "status": "healthy",
+                "service": settings.PRODUCT_NAME,
+                "legacy_name": settings.MCP_SERVER_NAME,
+            },
+            headers=cors,
+        )
 
     # 1. ChatGPT Plugin Manifest
     @mcp.custom_route("/.well-known/ai-plugin.json", methods=["GET", "OPTIONS"])
@@ -270,11 +279,11 @@ def register_openai_connector_routes(mcp):
         base_url = f"{request.url.scheme}://{request.url.netloc}"
         manifest = {
             "schema_version": "v1",
-            "name_for_human": "YouTube Research Assistant",
-            "name_for_model": "youtube_research_mcp",
-            "description_for_human": "Search YouTube, extract transcripts with timestamps, pinpoint topics, and conduct multi-video research.",
+            "name_for_human": "Nexora YouTube Intelligence",
+            "name_for_model": "nexora_mcp",
+            "description_for_human": "Search YouTube, extract transcripts with timestamps, pinpoint topics, and conduct multi-video research with Nexora.",
             "description_for_model": (
-                "Comprehensive YouTube research engine. Search videos, fetch metadata/chapters, retrieve full timestamped transcripts, "
+                "Nexora video intelligence engine. Search videos, fetch metadata/chapters, retrieve full timestamped transcripts, "
                 "pinpoint exact spoken dialogue sections using hybrid BM25+vector RRF retrieval, and synthesize multi-video research topics."
             ),
             "auth": {"type": "none"},
