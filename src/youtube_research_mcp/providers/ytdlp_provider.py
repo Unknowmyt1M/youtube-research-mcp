@@ -65,16 +65,11 @@ class YtDlpProvider(
             self._client = None
 
     def _get_base_opts(self) -> Dict[str, Any]:
-        """Base yt-dlp options configured to bypass YouTube bot detection without cookies."""
+        """Base yt-dlp options configured for clean and reliable extraction."""
         return {
             "skip_download": True,
             "quiet": True,
             "no_warnings": True,
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["ios", "mweb", "android"],
-                }
-            },
         }
 
     # -------------------------------------------------------------
