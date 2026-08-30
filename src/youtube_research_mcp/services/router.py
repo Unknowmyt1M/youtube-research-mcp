@@ -64,7 +64,10 @@ class ProviderRouter:
                     f"Provider '{p.name}' capability '{capability.value}' skipped (circuit breaker state is OPEN)."
                 )
         if not executable:
-            return []
+            logger.warning(
+                f"All providers for capability '{capability.value}' have tripped circuit breakers. Falling back to default provider order."
+            )
+            return providers
 
         def _sort_key(provider_item):
             idx, provider = provider_item
