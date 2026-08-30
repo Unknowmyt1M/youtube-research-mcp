@@ -126,6 +126,7 @@ class CommercialProvider(BaseTranscriptProvider):
                             duration_seconds=dur_total,
                             segments=segments,
                             full_text=full_text,
+                            provider="supadata",
                         )
 
         except Exception as e:

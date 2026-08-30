@@ -589,6 +589,7 @@ class InnerTubeProvider(
                 duration_seconds=dur,
                 segments=segments,
                 full_text=full_text,
+                provider="innertube",
             )
 
         except Exception as e:

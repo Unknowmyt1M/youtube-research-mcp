@@ -94,11 +94,14 @@ class Settings(BaseSettings):
 
     # Optional Commercial Keys (Isolated Fallback Tiers)
     SUPADATA_API_KEY: Optional[str] = None
+    SUPADATA_MAX_DAILY_REQUESTS: Optional[int] = None
     SEARCHAPI_API_KEY: Optional[str] = None
     TRANSCRIPT_API_KEY: Optional[str] = None
     YOUTUBE_DATA_API_KEY: Optional[str] = None
 
-    # HTTP & Connection Pooling
+    # HTTP & Connection Pooling / Proxy Tiers
+    YOUTUBE_PROXY_ENABLED: bool = False
+    RESIDENTIAL_PROXY_URL: Optional[str] = None
     HTTP_PROXY: Optional[str] = None
     HTTPS_PROXY: Optional[str] = None
     POOL_MAX_CONNECTIONS: int = 50

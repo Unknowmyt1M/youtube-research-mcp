@@ -1,8 +1,10 @@
 import asyncio
 import logging
+import time
 from typing import Any, List, Optional
 import httpx
 
+from youtube_research_mcp.config import settings
 from youtube_research_mcp.models.search import VideoSearchResult
 from youtube_research_mcp.models.video import VideoOverview
 from youtube_research_mcp.models.transcript import TranscriptResult
@@ -30,33 +32,69 @@ class ProviderRouter:
     """Adaptive capability-aware failover coordinator with async single-flight request coalescing."""
 
     def __init__(self):
-        self.yta = YouTubeTranscriptApiProvider()
+        # Tier 1: Direct Free Providers
+        self.yta_direct = YouTubeTranscriptApiProvider(
+            proxy=None, name="youtube_transcript_api"
+        )
+        self.ytdlp_direct = YtDlpProvider(proxy=None, name="yt-dlp")
         self.innertube = InnerTubeProvider()
-        self.ytdlp = YtDlpProvider()
-        self.commercial = CommercialProvider()
 
+        # Aliases for backward compatibility
+        self.yta = self.yta_direct
+        self.ytdlp = self.ytdlp_direct
+
+        self.direct_transcript_providers: List[BaseTranscriptProvider] = [
+            self.yta_direct,
+            self.ytdlp_direct,
+            self.innertube,
+        ]
+
+        # Tier 2: Proxied / Residential Free Route (only activated when configured)
+        self.proxy_url = settings.RESIDENTIAL_PROXY_URL or (
+            settings.HTTP_PROXY if settings.YOUTUBE_PROXY_ENABLED else None
+        )
+        if self.proxy_url:
+            self.yta_proxied = YouTubeTranscriptApiProvider(
+                proxy=self.proxy_url,
+                name="residential_proxy_youtube_transcript_api",
+            )
+            self.ytdlp_proxied = YtDlpProvider(
+                proxy=self.proxy_url, name="residential_proxy_yt_dlp"
+            )
+            self.proxied_transcript_providers: List[BaseTranscriptProvider] = [
+                self.yta_proxied,
+                self.ytdlp_proxied,
+            ]
+        else:
+            self.yta_proxied = None
+            self.ytdlp_proxied = None
+            self.proxied_transcript_providers: List[BaseTranscriptProvider] = []
+
+        # Tier 3: Commercial Fallback (LAST RESORT ONLY)
+        self.commercial = CommercialProvider()
+        self.supadata_daily_calls: int = 0
+        self.supadata_daily_date: str = ""
+
+        # Search & Metadata providers
         self.search_providers: List[BaseSearchProvider] = [
             self.innertube,
-            self.ytdlp,
+            self.ytdlp_direct,
         ]
         self.metadata_providers: List[BaseMetadataProvider] = [
             self.innertube,
-            self.ytdlp,
+            self.ytdlp_direct,
         ]
-        self.free_transcript_providers: List[BaseTranscriptProvider] = [
-            self.yta,
-            self.ytdlp,
-            self.innertube,
-        ]
+        self.free_transcript_providers: List[BaseTranscriptProvider] = (
+            self.direct_transcript_providers
+        )
         self.commercial_providers: List[BaseTranscriptProvider] = [
             self.commercial,
         ]
-        self.transcript_providers: List[BaseTranscriptProvider] = [
-            self.yta,
-            self.ytdlp,
-            self.innertube,
-            self.commercial,
-        ]
+        self.transcript_providers: List[BaseTranscriptProvider] = (
+            self.direct_transcript_providers
+            + self.proxied_transcript_providers
+            + [self.commercial]
+        )
         self.flight = get_single_flight()
 
     def _get_adaptive_providers(
@@ -84,7 +122,11 @@ class ProviderRouter:
                 return (1, 0.0, 999999.0, idx)
 
             # State priority: CLOSED (0), HALF_OPEN (1), OPEN (2)
-            state_val = 0 if breaker.state == CircuitState.CLOSED else (1 if breaker.state == CircuitState.HALF_OPEN else 2)
+            state_val = (
+                0
+                if breaker.state == CircuitState.CLOSED
+                else (1 if breaker.state == CircuitState.HALF_OPEN else 2)
+            )
             # Success rate: higher is better (negate for ascending sort)
             success_rate = breaker.success_rate
             # Avg latency: lower is better
@@ -162,52 +204,109 @@ class ProviderRouter:
 
         async def _do_transcript():
             metrics.record_request("transcript")
-            
-            # Step 1: Free Providers Tier (Adaptive sorting amongst free providers only)
-            free_candidates = self._get_adaptive_providers(
-                self.free_transcript_providers, ProviderCapability.TRANSCRIPT
-            )
-            
+
             content_missing_confirmed = False
             network_error_occurred = False
 
-            for provider in free_candidates:
-                try:
-                    res = await provider.get_transcript(
-                        video_id=video_id,
-                        language=language,
-                        fallback_language=fallback_language,
-                        translate_to=translate_to,
-                    )
-                    if res and res.segments:
-                        return res
+            async def _try_providers(
+                candidates: List[BaseTranscriptProvider],
+            ) -> Optional[TranscriptResult]:
+                nonlocal content_missing_confirmed, network_error_occurred
+                for provider in candidates:
+                    try:
+                        res = await provider.get_transcript(
+                            video_id=video_id,
+                            language=language,
+                            fallback_language=fallback_language,
+                            translate_to=translate_to,
+                        )
+                        if res and res.segments:
+                            return res
 
-                    # Inspect failure reason to classify
-                    breaker = provider.health.breakers.get(ProviderCapability.TRANSCRIPT)
-                    reason = (breaker.last_failure_reason if breaker else "") or ""
-                    
-                    if any(c in reason for c in ["NoTranscriptFound", "TranscriptsDisabled", "VideoUnavailable", "InvalidVideoId", "No captions found"]):
-                        content_missing_confirmed = True
-                    if any(n in reason for n in ["IpBlocked", "RequestBlocked", "PoTokenRequired", "429", "timed out", "NetworkError", "Connection"]):
+                        breaker = provider.health.breakers.get(
+                            ProviderCapability.TRANSCRIPT
+                        )
+                        reason = (
+                            breaker.last_failure_reason if breaker else ""
+                        ) or ""
+
+                        if any(
+                            c in reason
+                            for c in [
+                                "NoTranscriptFound",
+                                "TranscriptsDisabled",
+                                "VideoUnavailable",
+                                "InvalidVideoId",
+                                "No captions found",
+                                "TranslationLanguageNotAvailable",
+                            ]
+                        ):
+                            content_missing_confirmed = True
+                        if any(
+                            n in reason
+                            for n in [
+                                "IpBlocked",
+                                "RequestBlocked",
+                                "PoTokenRequired",
+                                "429",
+                                "timed out",
+                                "NetworkError",
+                                "Connection",
+                                "ConnectError",
+                            ]
+                        ):
+                            network_error_occurred = True
+
+                    except Exception as e:
                         network_error_occurred = True
+                        logger.warning(
+                            f"Transcript provider '{provider.name}' failed for {video_id}: {e}."
+                        )
+                return None
 
-                except Exception as e:
-                    network_error_occurred = True
-                    logger.warning(
-                        f"Free transcript provider '{provider.name}' failed for {video_id}: {e}."
-                    )
+            # --- TIER 1: Direct Free Providers ---
+            direct_candidates = self._get_adaptive_providers(
+                self.direct_transcript_providers, ProviderCapability.TRANSCRIPT
+            )
+            direct_res = await _try_providers(direct_candidates)
+            if direct_res and direct_res.segments:
+                return direct_res
 
-            # Step 2: Cost Guard - If free tier confirmed NO_CAPTIONS without network block, skip commercial
+            # --- TIER 2: Proxied / Residential Free Route (if configured) ---
+            if self.proxied_transcript_providers:
+                proxied_candidates = self._get_adaptive_providers(
+                    self.proxied_transcript_providers, ProviderCapability.TRANSCRIPT
+                )
+                proxied_res = await _try_providers(proxied_candidates)
+                if proxied_res and proxied_res.segments:
+                    return proxied_res
+
+            # --- TIER 2.5: Cost Guard for Verified Missing Content ---
             if content_missing_confirmed and not network_error_occurred:
                 logger.info(
-                    f"Video {video_id} confirmed to have no captions. Skipping commercial fallback to protect quota."
+                    f"Video {video_id} confirmed to have no captions by free providers. Skipping commercial fallback to protect quota."
                 )
                 return None
 
-            # Step 3: Commercial Fallback (LAST RESORT ONLY)
+            # --- TIER 3: Supadata Commercial Fallback (LAST RESORT ONLY) ---
+            curr_date = time.strftime("%Y-%m-%d")
+            if self.supadata_daily_date != curr_date:
+                self.supadata_daily_date = curr_date
+                self.supadata_daily_calls = 0
+
+            if (
+                settings.SUPADATA_MAX_DAILY_REQUESTS is not None
+                and self.supadata_daily_calls >= settings.SUPADATA_MAX_DAILY_REQUESTS
+            ):
+                logger.warning(
+                    f"Supadata daily quota reached ({self.supadata_daily_calls}/{settings.SUPADATA_MAX_DAILY_REQUESTS}). "
+                    "Skipping commercial fallback to enforce daily budget cap."
+                )
+                return None
+
             if self.commercial.health.can_execute(ProviderCapability.TRANSCRIPT):
                 logger.info(
-                    f"Free transcript providers exhausted due to network challenge for {video_id}. Attempting LAST-RESORT commercial fallback."
+                    f"All free routes exhausted due to network/datacenter challenge for {video_id}. Attempting LAST-RESORT commercial fallback."
                 )
                 try:
                     res = await self.commercial.get_transcript(
@@ -217,6 +316,7 @@ class ProviderRouter:
                         translate_to=translate_to,
                     )
                     if res and res.segments:
+                        self.supadata_daily_calls += 1
                         return res
                 except Exception as e:
                     logger.error(f"Commercial fallback failed for {video_id}: {e}.")
@@ -226,18 +326,27 @@ class ProviderRouter:
         return await self.flight.execute(flight_key, _do_transcript)
 
     def get_health_report(self) -> List[ProviderHealthReport]:
-        return [
-            self.yta.health.get_report(),
+        reports = [
+            self.yta_direct.health.get_report(),
             self.innertube.health.get_report(),
-            self.ytdlp.health.get_report(),
-            self.commercial.health.get_report(),
+            self.ytdlp_direct.health.get_report(),
         ]
+        if self.yta_proxied:
+            reports.append(self.yta_proxied.health.get_report())
+        if self.ytdlp_proxied:
+            reports.append(self.ytdlp_proxied.health.get_report())
+        reports.append(self.commercial.health.get_report())
+        return reports
 
     async def close(self):
         """Close provider HTTP clients."""
-        await self.yta.close()
+        await self.yta_direct.close()
         await self.innertube.close()
-        await self.ytdlp.close()
+        await self.ytdlp_direct.close()
+        if self.yta_proxied:
+            await self.yta_proxied.close()
+        if self.ytdlp_proxied:
+            await self.ytdlp_proxied.close()
         await self.commercial.close()
 
 

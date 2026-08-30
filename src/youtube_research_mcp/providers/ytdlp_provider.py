@@ -32,13 +32,19 @@ class YtDlpProvider(
 ):
     """In-Process yt-dlp provider with anti-bot player client rotation and capability-level health."""
 
-    def __init__(self):
-        self._health = CapabilityProviderHealth(provider_name="yt-dlp")
+    def __init__(
+        self,
+        proxy: Optional[str] = None,
+        name: str = "yt-dlp",
+    ):
+        self._name = name
+        self._proxy = proxy
+        self._health = CapabilityProviderHealth(provider_name=name)
         self._client: Optional[httpx.AsyncClient] = None
 
     @property
     def name(self) -> str:
-        return "yt-dlp"
+        return self._name
 
     @property
     def health(self) -> CapabilityProviderHealth:
@@ -50,12 +56,13 @@ class YtDlpProvider(
                 max_connections=settings.POOL_MAX_CONNECTIONS,
                 max_keepalive_connections=settings.POOL_MAX_KEEPALIVE,
             )
+            proxy_url = self._proxy or settings.HTTP_PROXY
             self._client = httpx.AsyncClient(
                 timeout=settings.REQUEST_TIMEOUT,
                 http2=True,
                 follow_redirects=True,
                 limits=limits,
-                proxy=settings.HTTP_PROXY,
+                proxy=proxy_url,
             )
         return self._client
 
@@ -66,11 +73,14 @@ class YtDlpProvider(
 
     def _get_base_opts(self) -> Dict[str, Any]:
         """Base yt-dlp options configured for clean and reliable extraction."""
-        return {
+        opts = {
             "skip_download": True,
             "quiet": True,
             "no_warnings": True,
         }
+        if self._proxy:
+            opts["proxy"] = self._proxy
+        return opts
 
     # -------------------------------------------------------------
     # SEARCH IMPLEMENTATION
@@ -304,6 +314,7 @@ class YtDlpProvider(
                         duration_seconds=dur,
                         segments=segments,
                         full_text=full_text,
+                        provider=self._name,
                     )
 
             self._health.record_failure(

@@ -54,7 +54,10 @@ class TranscriptService:
             return None
         if cached:
             metrics.record_cache_hit()
-            return TranscriptResult.model_validate(cached)
+            res = TranscriptResult.model_validate(cached)
+            if not res.provider:
+                res.provider = "cache"
+            return res
 
         metrics.record_cache_miss()
 
@@ -73,6 +76,9 @@ class TranscriptService:
                 ttl=settings.NEGATIVE_CACHE_TTL,
             )
             return None
+
+        # Record provider success in metrics
+        metrics.record_transcript_success(res.provider or "unknown")
 
         # RES-001: Check transcript size limits (safely bound maximum segments)
         if len(res.segments) > settings.MAX_TRANSCRIPT_SEGMENTS:

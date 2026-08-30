@@ -43,23 +43,33 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
     caption tracks with multi-language fallback and translation support.
     """
 
-    def __init__(self):
-        self._health = CapabilityProviderHealth(provider_name="YouTubeTranscriptApi")
+    def __init__(
+        self,
+        proxy: Optional[str] = None,
+        name: str = "youtube_transcript_api",
+    ):
+        self._name = name
+        self._proxy = proxy
+        self._health = CapabilityProviderHealth(provider_name=name)
         import requests
         from youtube_research_mcp.config import settings
         session = requests.Session()
         proxies = {}
-        if settings.HTTP_PROXY:
-            proxies["http"] = settings.HTTP_PROXY
-        if settings.HTTPS_PROXY:
-            proxies["https"] = settings.HTTPS_PROXY
+        if proxy:
+            proxies["http"] = proxy
+            proxies["https"] = proxy
+        else:
+            if settings.HTTP_PROXY:
+                proxies["http"] = settings.HTTP_PROXY
+            if settings.HTTPS_PROXY:
+                proxies["https"] = settings.HTTPS_PROXY
         if proxies:
             session.proxies.update(proxies)
         self._api = YouTubeTranscriptApi(http_client=session)
 
     @property
     def name(self) -> str:
-        return "YouTubeTranscriptApi"
+        return self._name
 
     @property
     def health(self) -> CapabilityProviderHealth:
@@ -231,6 +241,7 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
                 duration_seconds=dur,
                 segments=segments,
                 full_text=full_text,
+                provider=self._name,
             )
 
         except (VideoUnavailable, InvalidVideoId) as e:

@@ -54,6 +54,10 @@ class TranscriptResult(BaseModel):
     duration_seconds: float
     segments: List[TranscriptSegment]
     full_text: str
+    provider: Optional[str] = Field(
+        default=None,
+        description="Originating provider provenance (e.g. 'youtube_transcript_api', 'yt_dlp', 'innertube', 'residential_proxy_youtube_transcript_api', 'supadata', 'cache')",
+    )
 
 
 class TranscriptSearchMatch(BaseModel):
