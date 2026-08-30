@@ -75,42 +75,94 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
             # 1. List available transcripts
             transcript_list = self._api.list(clean_id)
             
-            # Build language search priority
-            search_langs = [language]
-            if fallback_language and fallback_language != language:
-                search_langs.append(fallback_language)
-            
-            matched_transcript = None
-            fallback_used = False
+            # Normalize target language codes
+            lang_code = language.lower()
+            lang_base = lang_code.split("-")[0]
+            fb_code = fallback_language.lower() if fallback_language else None
+            fb_base = fb_code.split("-")[0] if fb_code else None
 
-            # Try finding requested language
-            try:
-                matched_transcript = transcript_list.find_transcript(search_langs)
-                if matched_transcript.language_code != language and fallback_language:
-                    fallback_used = True
-            except Exception:
-                # If specific language not found, try any available transcript
+            # Collect candidates: List[Tuple[Transcript, bool]] (transcript, is_fallback)
+            candidates = []
+
+            # 1. Exact / prefix match on requested language (manual tracks first, then generated)
+            for code, t in getattr(transcript_list, "_manually_created_transcripts", {}).items():
+                c_lower = code.lower()
+                if c_lower == lang_code or c_lower.startswith(f"{lang_base}-") or lang_code.startswith(f"{c_lower}-"):
+                    candidates.append((t, False))
+
+            for code, t in getattr(transcript_list, "_generated_transcripts", {}).items():
+                c_lower = code.lower()
+                if c_lower == lang_code or c_lower.startswith(f"{lang_base}-") or lang_code.startswith(f"{c_lower}-"):
+                    candidates.append((t, False))
+
+            # 2. Fallback language (if requested and different)
+            if fb_code and fb_code != lang_code:
+                for code, t in getattr(transcript_list, "_manually_created_transcripts", {}).items():
+                    c_lower = code.lower()
+                    if c_lower == fb_code or c_lower.startswith(f"{fb_base}-") or fb_code.startswith(f"{c_lower}-"):
+                        candidates.append((t, True))
+
+                for code, t in getattr(transcript_list, "_generated_transcripts", {}).items():
+                    c_lower = code.lower()
+                    if c_lower == fb_code or c_lower.startswith(f"{fb_base}-") or fb_code.startswith(f"{c_lower}-"):
+                        candidates.append((t, True))
+
+            # 3. If translate_to is requested, any translatable transcript can serve as source
+            if translate_to:
+                for t in transcript_list:
+                    if t not in [c[0] for c in candidates]:
+                        candidates.append((t, True if fb_code else False))
+
+            # 4. If fallback_language is specified but candidates empty, allow any transcript
+            if fallback_language and not candidates:
+                for t in transcript_list:
+                    candidates.append((t, True))
+
+            # Deduplicate candidates while preserving order
+            unique_candidates = []
+            seen = set()
+            for t, is_fb in candidates:
+                key = (t.language_code, t.is_generated)
+                if key not in seen:
+                    seen.add(key)
+                    unique_candidates.append((t, is_fb))
+
+            if not unique_candidates:
                 try:
-                    matched_transcript = next(iter(transcript_list))
-                    fallback_used = True
-                except StopIteration:
-                    return None, None, False
+                    search_langs = [language]
+                    if fallback_language:
+                        search_langs.append(fallback_language)
+                    t = transcript_list.find_transcript(search_langs)
+                    unique_candidates.append((t, t.language_code.lower() != lang_code))
+                except Exception:
+                    pass
 
-            if not matched_transcript:
-                return None, None, False
+            last_error = None
+            for cand_t, is_fb in unique_candidates:
+                target_t = cand_t
+                is_trans = False
+                if translate_to:
+                    if target_t.is_translatable:
+                        try:
+                            target_t = target_t.translate(translate_to)
+                            is_trans = True
+                        except Exception as tr_e:
+                            logger.debug(f"Failed to translate transcript {cand_t.language_code} to {translate_to}: {tr_e}")
+                            continue
+                    else:
+                        continue
 
-            # Handle translation if requested
-            is_translated = False
-            if translate_to and matched_transcript.is_translatable:
                 try:
-                    matched_transcript = matched_transcript.translate(translate_to)
-                    is_translated = True
-                except Exception as tr_err:
-                    logger.warning(f"Translation to {translate_to} failed: {tr_err}")
+                    fetched = target_t.fetch()
+                    if fetched:
+                        return target_t, fetched, is_fb, is_trans
+                except Exception as fetch_e:
+                    last_error = fetch_e
+                    logger.debug(f"Failed to fetch candidate transcript {target_t.language_code}: {fetch_e}")
 
-            # Fetch the actual transcript snippets
-            fetched_data = matched_transcript.fetch()
-            return matched_transcript, fetched_data, fallback_used, is_translated
+            if last_error:
+                raise last_error
+            return None, None, False, False
 
         try:
             matched_tr, fetched_data, fallback_used, is_translated = await asyncio.to_thread(_fetch_sync)
@@ -119,7 +171,6 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
                 self._health.record_failure(
                     ProviderCapability.TRANSCRIPT,
                     "No captions found in requested language",
-                    category=ErrorCategory.NO_CAPTIONS,
                 )
                 return None
 
@@ -128,7 +179,6 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
                 self._health.record_failure(
                     ProviderCapability.TRANSCRIPT,
                     "Empty transcript snippets returned",
-                    category=ErrorCategory.NO_CAPTIONS,
                 )
                 return None
 
@@ -179,7 +229,6 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
             self._health.record_failure(
                 ProviderCapability.TRANSCRIPT,
                 str(e),
-                category=ErrorCategory.VIDEO_NOT_FOUND,
             )
             return None
 
@@ -187,7 +236,6 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
             self._health.record_failure(
                 ProviderCapability.TRANSCRIPT,
                 str(e),
-                category=ErrorCategory.NO_CAPTIONS,
             )
             return None
 
@@ -195,7 +243,6 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
             self._health.record_failure(
                 ProviderCapability.TRANSCRIPT,
                 f"Access blocked by YouTube anti-bot: {e}",
-                category=ErrorCategory.BOT_DETECTION,
             )
             return None
 
@@ -203,6 +250,5 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
             self._health.record_failure(
                 ProviderCapability.TRANSCRIPT,
                 f"Unexpected error in YouTubeTranscriptApi: {e}",
-                category=ErrorCategory.TRANSIENT_NETWORK,
             )
             return None
