@@ -75,50 +75,55 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
             # 1. List available transcripts
             transcript_list = self._api.list(clean_id)
             
-            # Normalize target language codes
             lang_code = language.lower()
             lang_base = lang_code.split("-")[0]
             fb_code = fallback_language.lower() if fallback_language else None
             fb_base = fb_code.split("-")[0] if fb_code else None
 
-            # Collect candidates: List[Tuple[Transcript, bool]] (transcript, is_fallback)
+            # All available transcripts
+            all_transcripts = list(transcript_list)
+            if not all_transcripts:
+                return None, None, False, False
+
+            # Separate into manual and generated
+            manual_tracks = [t for t in all_transcripts if not t.is_generated]
+            generated_tracks = [t for t in all_transcripts if t.is_generated]
+
             candidates = []
 
-            # 1. Exact / prefix match on requested language (manual tracks first, then generated)
-            for code, t in getattr(transcript_list, "_manually_created_transcripts", {}).items():
-                c_lower = code.lower()
-                if c_lower == lang_code or c_lower.startswith(f"{lang_base}-") or lang_code.startswith(f"{c_lower}-"):
+            # 1. Exact requested language: manual first, then generated
+            for t in manual_tracks:
+                c = t.language_code.lower()
+                if c == lang_code or c.startswith(f"{lang_base}-") or lang_code.startswith(f"{c}-"):
                     candidates.append((t, False))
-
-            for code, t in getattr(transcript_list, "_generated_transcripts", {}).items():
-                c_lower = code.lower()
-                if c_lower == lang_code or c_lower.startswith(f"{lang_base}-") or lang_code.startswith(f"{c_lower}-"):
+            for t in generated_tracks:
+                c = t.language_code.lower()
+                if c == lang_code or c.startswith(f"{lang_base}-") or lang_code.startswith(f"{c}-"):
                     candidates.append((t, False))
 
             # 2. Fallback language (if requested and different)
             if fb_code and fb_code != lang_code:
-                for code, t in getattr(transcript_list, "_manually_created_transcripts", {}).items():
-                    c_lower = code.lower()
-                    if c_lower == fb_code or c_lower.startswith(f"{fb_base}-") or fb_code.startswith(f"{c_lower}-"):
+                for t in manual_tracks:
+                    c = t.language_code.lower()
+                    if c == fb_code or c.startswith(f"{fb_base}-") or fb_code.startswith(f"{c}-"):
+                        candidates.append((t, True))
+                for t in generated_tracks:
+                    c = t.language_code.lower()
+                    if c == fb_code or c.startswith(f"{fb_base}-") or fb_code.startswith(f"{c}-"):
                         candidates.append((t, True))
 
-                for code, t in getattr(transcript_list, "_generated_transcripts", {}).items():
-                    c_lower = code.lower()
-                    if c_lower == fb_code or c_lower.startswith(f"{fb_base}-") or fb_code.startswith(f"{c_lower}-"):
-                        candidates.append((t, True))
-
-            # 3. If translate_to is requested, any translatable transcript can serve as source
+            # 3. If translate_to is requested, include any remaining translatable track
             if translate_to:
-                for t in transcript_list:
-                    if t not in [c[0] for c in candidates]:
-                        candidates.append((t, True if fb_code else False))
+                for t in all_transcripts:
+                    if t not in [c[0] for c in candidates] and t.is_translatable:
+                        candidates.append((t, fb_code is not None))
 
-            # 4. If fallback_language is specified but candidates empty, allow any transcript
+            # 4. If fallback_language is provided and no candidates matched, try all remaining tracks
             if fallback_language and not candidates:
-                for t in transcript_list:
+                for t in all_transcripts:
                     candidates.append((t, True))
 
-            # Deduplicate candidates while preserving order
+            # Deduplicate preserving order
             unique_candidates = []
             seen = set()
             for t, is_fb in candidates:
@@ -128,14 +133,7 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
                     unique_candidates.append((t, is_fb))
 
             if not unique_candidates:
-                try:
-                    search_langs = [language]
-                    if fallback_language:
-                        search_langs.append(fallback_language)
-                    t = transcript_list.find_transcript(search_langs)
-                    unique_candidates.append((t, t.language_code.lower() != lang_code))
-                except Exception:
-                    pass
+                return None, None, False, False
 
             last_error = None
             for cand_t, is_fb in unique_candidates:
