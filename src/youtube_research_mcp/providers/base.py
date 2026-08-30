@@ -94,16 +94,17 @@ class CapabilityCircuitBreaker:
         self.probe_in_flight = False
         self.state = CircuitState.CLOSED
 
-    def record_failure(self, reason: str):
-        """Record failure and trip circuit to OPEN if threshold reached."""
+    def record_failure(self, reason: str, is_systemic: bool = True):
+        """Record failure and trip circuit to OPEN if threshold reached for systemic failures."""
         self.total_requests += 1
-        self.failure_count += 1
-        self.last_failure_time = time.time()
         self.last_failure_reason = reason
         self.probe_in_flight = False
 
-        if self.state == CircuitState.HALF_OPEN or self.failure_count >= self.fail_threshold:
-            self.state = CircuitState.OPEN
+        if is_systemic:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+            if self.state == CircuitState.HALF_OPEN or self.failure_count >= self.fail_threshold:
+                self.state = CircuitState.OPEN
 
     @property
     def avg_latency_ms(self) -> float:
@@ -154,10 +155,10 @@ class CapabilityProviderHealth:
         if breaker:
             breaker.record_success(latency_ms)
 
-    def record_failure(self, capability: ProviderCapability, reason: str):
+    def record_failure(self, capability: ProviderCapability, reason: str, is_systemic: bool = True):
         breaker = self.breakers.get(capability)
         if breaker:
-            breaker.record_failure(reason)
+            breaker.record_failure(reason, is_systemic=is_systemic)
 
     def get_report(self) -> ProviderHealthReport:
         caps_dict = {}

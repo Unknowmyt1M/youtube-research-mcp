@@ -229,6 +229,7 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
             self._health.record_failure(
                 ProviderCapability.TRANSCRIPT,
                 str(e),
+                is_systemic=False,
             )
             return None
 
@@ -236,6 +237,7 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
             self._health.record_failure(
                 ProviderCapability.TRANSCRIPT,
                 str(e),
+                is_systemic=False,
             )
             return None
 
@@ -243,6 +245,7 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
             self._health.record_failure(
                 ProviderCapability.TRANSCRIPT,
                 f"Access blocked by YouTube anti-bot: {e}",
+                is_systemic=True,
             )
             return None
 
@@ -250,5 +253,6 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
             self._health.record_failure(
                 ProviderCapability.TRANSCRIPT,
                 f"Unexpected error in YouTubeTranscriptApi: {e}",
+                is_systemic=True,
             )
             return None
