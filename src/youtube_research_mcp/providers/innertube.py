@@ -312,8 +312,14 @@ class InnerTubeProvider(
 
                     data = resp.json()
                     playability = data.get("playabilityStatus", {}).get("status")
-                    if playability != "OK":
-                        last_err = f"Playability {playability} on profile {profile}"
+                    if playability == "ERROR":
+                        last_err = f"Playability ERROR: {data.get('playabilityStatus', {}).get('reason')}"
+                        continue
+
+                    # Allow metadata extraction when valid videoDetails is present
+                    details = data.get("videoDetails", {})
+                    if not details or not details.get("title"):
+                        last_err = f"Missing videoDetails on profile {profile} (status={playability})"
                         continue
 
                     overview = self._parse_player_metadata(data, clean_id)

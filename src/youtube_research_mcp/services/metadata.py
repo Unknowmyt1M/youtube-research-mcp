@@ -33,12 +33,6 @@ class MetadataService:
         # 2. Fetch via router
         overview = await self.router.get_video(clean_id)
         if not overview:
-            # Negative cache short-lived
-            await self.cache.set_negative(
-                cache_key,
-                reason="Video unavailable or private",
-                ttl=settings.NEGATIVE_CACHE_TTL,
-            )
             return None
 
         # 3. Store in cache

@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     MCP_SERVER_NAME: str = "youtube-research-mcp"
     LOG_LEVEL: str = "INFO"
     MAX_CONCURRENCY: int = 10
-    REQUEST_TIMEOUT: float = 15.0
+    REQUEST_TIMEOUT: float = 25.0
     PORT: Optional[int] = None  # Dynamic cloud platform port (Railway / Render / Fly.io)
     MCP_PORT: int = 8000
     MCP_HOST: str = "0.0.0.0"

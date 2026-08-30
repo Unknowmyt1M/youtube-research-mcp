@@ -67,7 +67,6 @@ class TranscriptService:
         )
 
         if not res or not res.segments:
-            # Negative cache for uncaptioned videos
             await self.cache.set_negative(
                 cache_key,
                 reason=f"No captions available for {clean_id} (lang={clean_lang})",

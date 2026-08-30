@@ -50,7 +50,14 @@ class ProviderRouter:
         self, providers: List[Any], capability: ProviderCapability
     ) -> List[Any]:
         """Rank executable providers adaptively by circuit health, historical success rate, and latency."""
-        executable = [p for p in providers if p.health.can_execute(capability)]
+        executable = []
+        for p in providers:
+            if p.health.can_execute(capability):
+                executable.append(p)
+            else:
+                logger.info(
+                    f"Provider '{p.name}' capability '{capability.value}' skipped (circuit breaker state is OPEN)."
+                )
         if not executable:
             return []
 

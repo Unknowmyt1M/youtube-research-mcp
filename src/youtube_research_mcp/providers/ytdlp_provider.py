@@ -159,10 +159,11 @@ class YtDlpProvider(
                     canonical_video_url(clean_id), download=False
                 )
 
+        op_timeout = max(30.0, settings.REQUEST_TIMEOUT)
         try:
             info = await asyncio.wait_for(
                 asyncio.to_thread(_run_metadata),
-                timeout=settings.REQUEST_TIMEOUT,
+                timeout=op_timeout,
             )
             if not info:
                 self._health.record_failure(
@@ -237,18 +238,12 @@ class YtDlpProvider(
 
         start_t = time.perf_counter()
         clean_id = extract_video_id(video_id)
-
-        # Restrict requested subtitle languages strictly to avoid downloading unrelated tracks
-        req_langs = [language, f"{language}-orig"]
-        if fallback_language and fallback_language not in req_langs:
-            req_langs.extend([fallback_language, f"{fallback_language}-orig"])
+        op_timeout = max(30.0, settings.REQUEST_TIMEOUT)
 
         def _run_transcript_extract():
             opts = self._get_base_opts()
             opts["writesubtitles"] = True
             opts["writeautomaticsub"] = True
-            opts["subtitleslangs"] = req_langs
-            opts["subtitlesformat"] = "json3"
             with yt_dlp.YoutubeDL(opts) as ydl:
                 return ydl.extract_info(
                     canonical_video_url(clean_id), download=False
@@ -257,7 +252,7 @@ class YtDlpProvider(
         try:
             info = await asyncio.wait_for(
                 asyncio.to_thread(_run_transcript_extract),
-                timeout=settings.REQUEST_TIMEOUT,
+                timeout=op_timeout,
             )
             if not info:
                 self._health.record_failure(
@@ -268,69 +263,23 @@ class YtDlpProvider(
             subs = info.get("subtitles", {})
             auto_subs = info.get("automatic_captions", {})
 
-            track_url = None
-            is_gen = False
-            matched_lang = language
-            fallback_used = False
+            # Deterministic language matching
+            entries, matched_lang, is_gen, fallback_used = self._match_language_track(
+                subs, auto_subs, language, fallback_language
+            )
 
-            # Search priority 1: Requested language (manual then auto)
-            candidates = [language, f"{language}-orig"]
-            for cand in candidates:
-                if cand in subs:
-                    entries = subs[cand]
-                    track_url = next(
-                        (e["url"] for e in entries if e.get("ext") == "json3"),
-                        entries[0]["url"] if entries else None,
-                    )
-                    if track_url:
-                        matched_lang = cand
-                        break
-                elif cand in auto_subs:
-                    entries = auto_subs[cand]
-                    track_url = next(
-                        (e["url"] for e in entries if e.get("ext") == "json3"),
-                        entries[0]["url"] if entries else None,
-                    )
-                    if track_url:
-                        is_gen = True
-                        matched_lang = cand
-                        break
-
-            # Search priority 2: Fallback language if explicitly specified
-            if not track_url and fallback_language:
-                fb_candidates = [fallback_language, f"{fallback_language}-orig"]
-                for cand in fb_candidates:
-                    if cand in subs:
-                        entries = subs[cand]
-                        track_url = next(
-                            (e["url"] for e in entries if e.get("ext") == "json3"),
-                            entries[0]["url"] if entries else None,
-                        )
-                        if track_url:
-                            matched_lang = cand
-                            fallback_used = True
-                            break
-                    elif cand in auto_subs:
-                        entries = auto_subs[cand]
-                        track_url = next(
-                            (e["url"] for e in entries if e.get("ext") == "json3"),
-                            entries[0]["url"] if entries else None,
-                        )
-                        if track_url:
-                            is_gen = True
-                            matched_lang = cand
-                            fallback_used = True
-                            break
-
-            if not track_url:
-                # Requested language unavailable and no fallback configured
+            if not entries:
                 return None
 
-            # Add format json3 parameter if missing
+            # Select JSON3 format or append fmt=json3
+            json3_entry = next((e for e in entries if e.get("ext") == "json3"), None)
+            track_url = json3_entry["url"] if json3_entry else (entries[0]["url"] if entries else None)
+            if not track_url:
+                return None
+
             if "fmt=json3" not in track_url:
                 track_url += "&fmt=json3"
 
-            # Translation parameter if requested
             if translate_to and f"tlang={translate_to}" not in track_url:
                 track_url += f"&tlang={translate_to}"
                 matched_lang = translate_to
@@ -346,7 +295,7 @@ class YtDlpProvider(
                     latency_ms = (time.perf_counter() - start_t) * 1000.0
                     self._health.record_success(ProviderCapability.TRANSCRIPT, latency_ms)
 
-                    clean_matched = matched_lang.replace("-orig", "")
+                    clean_matched = (matched_lang or language).replace("-orig", "")
                     return TranscriptResult(
                         video_id=clean_id,
                         language=clean_matched,
@@ -363,14 +312,81 @@ class YtDlpProvider(
                         full_text=full_text,
                     )
 
+            self._health.record_failure(
+                ProviderCapability.TRANSCRIPT, f"Failed downloading subtitle payload (HTTP {res.status_code})"
+            )
+            return None
+
         except asyncio.TimeoutError:
             self._health.record_failure(
-                ProviderCapability.TRANSCRIPT, f"yt-dlp transcript timed out after {settings.REQUEST_TIMEOUT}s"
+                ProviderCapability.TRANSCRIPT, f"yt-dlp transcript timed out after {op_timeout}s"
             )
+            return None
         except Exception as e:
             self._health.record_failure(ProviderCapability.TRANSCRIPT, str(e))
+            return None
 
-        return None
+    def _match_language_track(
+        self,
+        subs: Dict[str, Any],
+        auto_subs: Dict[str, Any],
+        language: str,
+        fallback_language: Optional[str] = None,
+    ):
+        """
+        Deterministic 4-stage language matching:
+        1. Exact match in manual subtitles
+        2. Normalized base-language match in manual subtitles (e.g. 'en-US' -> 'en')
+        3. Exact match in automatic captions
+        4. Normalized base-language match in automatic captions
+        5. Repeat 1-4 for fallback_language if requested
+        """
+        def _norm(code: str) -> str:
+            return code.split("-")[0].lower() if code else ""
+
+        norm_req = _norm(language)
+        norm_fb = _norm(fallback_language) if fallback_language else None
+
+        # 1. Exact in manual
+        if language in subs:
+            return subs[language], language, False, False
+        if f"{language}-orig" in subs:
+            return subs[f"{language}-orig"], f"{language}-orig", False, False
+
+        # 2. Base-lang in manual
+        for code, entries in subs.items():
+            if _norm(code) == norm_req:
+                return entries, code, False, False
+
+        # 3. Exact in auto
+        if language in auto_subs:
+            return auto_subs[language], language, True, False
+        if f"{language}-orig" in auto_subs:
+            return auto_subs[f"{language}-orig"], f"{language}-orig", True, False
+
+        # 4. Base-lang in auto
+        for code, entries in auto_subs.items():
+            if _norm(code) == norm_req:
+                return entries, code, True, False
+
+        # Fallback language checks
+        if fallback_language:
+            if fallback_language in subs:
+                return subs[fallback_language], fallback_language, False, True
+            if f"{fallback_language}-orig" in subs:
+                return subs[f"{fallback_language}-orig"], f"{fallback_language}-orig", False, True
+            for code, entries in subs.items():
+                if _norm(code) == norm_fb:
+                    return entries, code, False, True
+            if fallback_language in auto_subs:
+                return auto_subs[fallback_language], fallback_language, True, True
+            if f"{fallback_language}-orig" in auto_subs:
+                return auto_subs[f"{fallback_language}-orig"], f"{fallback_language}-orig", True, True
+            for code, entries in auto_subs.items():
+                if _norm(code) == norm_fb:
+                    return entries, code, True, True
+
+        return None, None, False, False
 
     def _parse_json3(
         self, data: Dict[str, Any], video_id: str

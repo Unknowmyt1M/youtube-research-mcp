@@ -18,6 +18,21 @@ class ProviderCapability(str, Enum):
     TRANSCRIPT = "transcript"
 
 
+class ErrorCategory(str, Enum):
+    """Explicit taxonomy for internal error tracking and telemetry."""
+
+    VIDEO_NOT_FOUND = "VIDEO_NOT_FOUND"
+    VIDEO_PRIVATE = "VIDEO_PRIVATE"
+    VIDEO_UNAVAILABLE = "VIDEO_UNAVAILABLE"
+    NO_CAPTIONS = "NO_CAPTIONS"
+    LANGUAGE_NOT_AVAILABLE = "LANGUAGE_NOT_AVAILABLE"
+    PROVIDER_TIMEOUT = "PROVIDER_TIMEOUT"
+    PROVIDER_NETWORK_ERROR = "PROVIDER_NETWORK_ERROR"
+    PROVIDER_BLOCKED = "PROVIDER_BLOCKED"
+    PROVIDER_PARSE_ERROR = "PROVIDER_PARSE_ERROR"
+    PROVIDER_CIRCUIT_OPEN = "PROVIDER_CIRCUIT_OPEN"
+
+
 class CircuitState(str, Enum):
     """Circuit breaker state machine."""
 
