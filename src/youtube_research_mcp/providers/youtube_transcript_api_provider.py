@@ -45,7 +45,17 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
 
     def __init__(self):
         self._health = CapabilityProviderHealth(provider_name="YouTubeTranscriptApi")
-        self._api = YouTubeTranscriptApi()
+        import requests
+        from youtube_research_mcp.config import settings
+        session = requests.Session()
+        proxies = {}
+        if settings.HTTP_PROXY:
+            proxies["http"] = settings.HTTP_PROXY
+        if settings.HTTPS_PROXY:
+            proxies["https"] = settings.HTTPS_PROXY
+        if proxies:
+            session.proxies.update(proxies)
+        self._api = YouTubeTranscriptApi(http_client=session)
 
     @property
     def name(self) -> str:

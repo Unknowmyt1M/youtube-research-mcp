@@ -100,6 +100,7 @@ class Settings(BaseSettings):
 
     # HTTP & Connection Pooling
     HTTP_PROXY: Optional[str] = None
+    HTTPS_PROXY: Optional[str] = None
     POOL_MAX_CONNECTIONS: int = 50
     POOL_MAX_KEEPALIVE: int = 20
     USER_AGENT: str = (
