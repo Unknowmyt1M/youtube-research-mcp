@@ -63,7 +63,7 @@ class CommercialProvider(BaseTranscriptProvider):
                 headers = {"x-api-key": settings.SUPADATA_API_KEY}
                 
                 # Try primary language first
-                query_url = f"https://api.supadata.ai/v1/youtube/transcript?videoId={clean_id}&lang={language}"
+                query_url = f"https://api.supadata.ai/v1/youtube/transcript?videoId={clean_id}&lang={language}&text=false"
                 if translate_to:
                     query_url += f"&translate={translate_to}"
 
@@ -73,7 +73,7 @@ class CommercialProvider(BaseTranscriptProvider):
 
                 # If primary language failed and fallback is specified, try fallback
                 if res.status_code != 200 and fallback_language and fallback_language != language:
-                    fb_url = f"https://api.supadata.ai/v1/youtube/transcript?videoId={clean_id}&lang={fallback_language}"
+                    fb_url = f"https://api.supadata.ai/v1/youtube/transcript?videoId={clean_id}&lang={fallback_language}&text=false"
                     if translate_to:
                         fb_url += f"&translate={translate_to}"
                     res_fb = await client.get(fb_url, headers=headers)
@@ -84,17 +84,21 @@ class CommercialProvider(BaseTranscriptProvider):
 
                 if res.status_code == 200:
                     data = res.json()
+                    actual_lang = translate_to or data.get("lang") or actual_lang
                     content = data.get("content", [])
                     segments = []
                     for item in content:
-                        s_sec = item.get("offset", 0.0) / 1000.0 if item.get("offset") > 1000 else float(item.get("offset", 0.0))
-                        dur = float(item.get("duration", 0.0))
+                        raw_offset = item.get("offset", 0.0)
+                        raw_dur = item.get("duration", 0.0)
+                        # Supadata provides offset and duration in milliseconds
+                        s_sec = float(raw_offset) / 1000.0 if raw_offset is not None else 0.0
+                        dur = float(raw_dur) / 1000.0 if raw_dur is not None else 0.0
                         segments.append(
                             TranscriptSegment(
                                 start=s_sec,
                                 duration=dur,
                                 end=s_sec + dur,
-                                text=item.get("text", ""),
+                                text=item.get("text", "").strip(),
                                 timestamp_formatted=format_timestamp(s_sec),
                                 url=make_timestamp_url(clean_id, s_sec),
                             )
