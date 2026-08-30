@@ -502,7 +502,9 @@ class InnerTubeProvider(
 
             if not tracks:
                 self._health.record_failure(
-                    ProviderCapability.TRANSCRIPT, last_err or "No caption tracks in InnerTube"
+                    ProviderCapability.TRANSCRIPT,
+                    last_err or "No caption tracks in InnerTube",
+                    is_systemic=False,
                 )
                 return None
 
@@ -556,7 +558,9 @@ class InnerTubeProvider(
             tt_resp = await client.get(timedtext_url)
             if tt_resp.status_code != 200:
                 self._health.record_failure(
-                    ProviderCapability.TRANSCRIPT, f"Timedtext HTTP {tt_resp.status_code}"
+                    ProviderCapability.TRANSCRIPT,
+                    f"Timedtext HTTP {tt_resp.status_code}",
+                    is_systemic=False,
                 )
                 return None
 
