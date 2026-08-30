@@ -545,5 +545,7 @@ class InnerTubeProvider(
                         words=word_timings if word_timings else None,
                     )
                 )
+                if len(segments) >= settings.MAX_TRANSCRIPT_SEGMENTS:
+                    break
 
         return segments

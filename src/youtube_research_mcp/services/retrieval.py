@@ -16,9 +16,9 @@ from youtube_research_mcp.models.transcript import (
 
 logger = logging.getLogger(__name__)
 
-# Unicode-aware regex matching Latin, Devanagari (Hindi), CJK, Arabic, Cyrillic tokens
+# Unicode-aware regex matching Latin, Devanagari (Hindi), CJK (Chinese, Japanese), Korean (Hangul), Arabic, Cyrillic tokens
 MULTILINGUAL_TOKEN_PATTERN = re.compile(
-    r"[\u0900-\u097F]+|[\u4e00-\u9fff]+|[\u3040-\u30ff]+|[\u0600-\u06FF]+|[\u0400-\u04FF]+|[a-zA-Z0-9_-]+"
+    r"[\u0900-\u097F]+|[\u4e00-\u9fff]+|[\u3040-\u30ff]+|[\uac00-\ud7af]+|[\u1100-\u11ff]+|[\u0600-\u06FF]+|[\u0400-\u04FF]+|[a-zA-Z0-9_-]+"
 )
 
 

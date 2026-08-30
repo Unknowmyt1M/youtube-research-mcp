@@ -113,25 +113,58 @@ class SQLiteCache(BaseCache):
         expires_at = now + effective_ttl
         raw_val = json.dumps(value)
 
-        async with aiosqlite.connect(self.db_path) as db:
-            # Check table count and prune if exceeding maximum entries limit
-            async with db.execute("SELECT COUNT(*) FROM cache_store;") as cursor:
-                count_row = await cursor.fetchone()
-                current_count = count_row[0] if count_row else 0
+    async def _prune_if_needed(self, db: aiosqlite.Connection, now: float) -> None:
+        """Prune cache entries if table count reaches MAX_CACHE_ENTRIES, prioritizing expired keys."""
+        prefix_pattern = f"{settings.CACHE_SCHEMA_VERSION}:%"
+        async with db.execute(
+            "SELECT COUNT(*) FROM cache_store WHERE key LIKE ?;", (prefix_pattern,)
+        ) as cursor:
+            count_row = await cursor.fetchone()
+            current_count = count_row[0] if count_row else 0
 
-            if current_count >= settings.MAX_CACHE_ENTRIES:
-                # Delete expired entries or oldest expiring entries
+        if current_count >= settings.MAX_CACHE_ENTRIES:
+            # 1. Delete expired keys in current version namespace first
+            await db.execute(
+                "DELETE FROM cache_store WHERE key LIKE ? AND expires_at <= ?;",
+                (prefix_pattern, now),
+            )
+            # 2. Re-check count; if still over limit, delete oldest expiring keys
+            async with db.execute(
+                "SELECT COUNT(*) FROM cache_store WHERE key LIKE ?;", (prefix_pattern,)
+            ) as cursor:
+                count_row2 = await cursor.fetchone()
+                current_count2 = count_row2[0] if count_row2 else 0
+
+            if current_count2 >= settings.MAX_CACHE_ENTRIES:
                 await db.execute(
                     """
                     DELETE FROM cache_store
                     WHERE key IN (
                         SELECT key FROM cache_store
+                        WHERE key LIKE ?
                         ORDER BY expires_at ASC
                         LIMIT 50
                     );
-                    """
+                    """,
+                    (prefix_pattern,),
                 )
 
+    async def set(
+        self,
+        key: str,
+        value: Any,
+        ttl: Optional[int] = None,
+        ttl_seconds: Optional[int] = None,
+    ) -> None:
+        await self._ensure_db()
+        v_key = self.format_key(key)
+        now = time.time()
+        effective_ttl = ttl if ttl is not None else (ttl_seconds if ttl_seconds is not None else settings.CACHE_TTL_METADATA)
+        expires_at = now + effective_ttl
+        raw_val = json.dumps(value)
+
+        async with aiosqlite.connect(self.db_path) as db:
+            await self._prune_if_needed(db, now)
             await db.execute(
                 """
                 INSERT OR REPLACE INTO cache_store (key, value, is_negative, created_at, expires_at)
@@ -156,6 +189,7 @@ class SQLiteCache(BaseCache):
         raw_val = json.dumps({self.NEGATIVE_FLAG: True, "reason": reason})
 
         async with aiosqlite.connect(self.db_path) as db:
+            await self._prune_if_needed(db, now)
             await db.execute(
                 """
                 INSERT OR REPLACE INTO cache_store (key, value, is_negative, created_at, expires_at)
@@ -177,8 +211,9 @@ class SQLiteCache(BaseCache):
 
     async def clear(self) -> None:
         await self._ensure_db()
+        prefix_pattern = f"{settings.CACHE_SCHEMA_VERSION}:%"
         async with aiosqlite.connect(self.db_path) as db:
-            await db.execute("DELETE FROM cache_store;")
+            await db.execute("DELETE FROM cache_store WHERE key LIKE ?;", (prefix_pattern,))
             await db.commit()
 
     async def purge_expired(self) -> int:

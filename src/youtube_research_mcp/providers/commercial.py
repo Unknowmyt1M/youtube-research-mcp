@@ -99,6 +99,8 @@ class CommercialProvider(BaseTranscriptProvider):
                                 url=make_timestamp_url(clean_id, s_sec),
                             )
                         )
+                        if len(segments) >= settings.MAX_TRANSCRIPT_SEGMENTS:
+                            break
 
                     if segments:
                         full_text = " ".join(s.text for s in segments)
@@ -124,7 +126,5 @@ class CommercialProvider(BaseTranscriptProvider):
 
         except Exception as e:
             self._health.record_failure(ProviderCapability.TRANSCRIPT, str(e))
-
-        return None
 
         return None

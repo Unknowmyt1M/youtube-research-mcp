@@ -1,6 +1,6 @@
 # YouTube Research MCP — Production-Grade Research Engine
 
-[![CI](https://img.shields.io/badge/tests-30%20passed-brightgreen.svg)](tests/)
+[![CI](https://img.shields.io/badge/tests-100%2B%20passed-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![FastMCP](https://img.shields.io/badge/MCP-FastMCP%202.0-orange.svg)](https://github.com/jlowin/fastmcp)
@@ -12,7 +12,7 @@ Designed specifically for AI pair programmers and reasoning models (ChatGPT, Cla
 
 ---
 
-## ⚡ Performance & Latency Benchmarks (Phase 2)
+## ⚡ Performance & Latency Benchmarks
 
 Measured directly on Windows 11 / Python 3.11 with SQLite WAL Mode & Shared HTTP/2 Connection Pooling:
 
@@ -35,32 +35,40 @@ AI Agent (ChatGPT / Claude / Cursor / OpenCode)
    ▼ (Streamable HTTP / stdio / SSE)
 FastMCP Server (Port 8000)
    ├── Bounded LRU Retrieval Index Cache (MAX=100, TTL=1hr)
-   ├── Metrics & Observability Collector (`youtube://health`)
-   └── SQLite WAL Cache v2 (Negative Caching + Auto-Purge)
+   ├── Metrics & Observability Collector (`youtube://health`, `/api/admin/metrics`)
+   └── Pluggable Cache Layer (SQLite WAL / Redis / Memory with Negative Caching & Auto-Purge)
          │
          ▼
    SingleFlight Request Coalescer (Zero Cache Stampedes)
          │
          ▼
-   Capability-Aware Circuit Breaker (CLOSED / OPEN / HALF_OPEN)
+   Capability-Aware Circuit Breakers (CLOSED / OPEN / HALF_OPEN)
          ├── Search Capability
          ├── Metadata Capability
          └── Transcript Capability
          │
          ▼
    Multi-Tier Provider Routing
-         ├── Tier 1: In-Process yt-dlp (Anti-Bot Android/iOS/TV Client Rotation)
-         ├── Tier 2: Direct InnerTube (Shared HTTP/2 Connection Pool)
-         └── Tier 3: Commercial Fallbacks (Supadata / SearchApi)
+         ├── Tier 1: Direct InnerTube (Shared HTTP/2 Connection Pool) / yt-dlp (Anti-Bot Rotation)
+         ├── Tier 2: yt-dlp Fallback Extraction / InnerTube Fallback
+         └── Tier 3: Commercial Fallbacks (Supadata)
 ```
 
 1. **Anti-Bot Client Rotation Engine**: Automatically rotates player clients across `android`, `ios`, `tv_embedded`, and `mweb` without cookies or API keys.
-2. **Capability-Level Circuit Breaker**: State machine (`CLOSED` $\rightarrow$ `OPEN` $\rightarrow$ `HALF_OPEN` with 1-probe concurrency lock) tracked individually for search, metadata, and transcript capabilities.
-3. **Single-Flight Request Coalescing**: Prevents cache stampedes by merging duplicate in-flight requests into a single upstream execution.
-4. **Multilingual Unicode Tokenization**: Native token splitting across Hindi (Devanagari), CJK (Chinese, Japanese), Arabic, Cyrillic, and Latin scripts.
-5. **Hybrid Semantic Retrieval (In-Process)**: BM25s sparse retrieval fused via Reciprocal Rank Fusion (RRF) with dense vector embeddings / TF-IDF.
-6. **Multi-Video Research & Evidence Clustering**: Autonomous cross-video discovery with source channel diversity (`max_videos_per_channel=2`) and near-duplicate claim clustering.
-7. **Explicit Language Provenance**: Returns `requested_language`, `actual_language`, `fallback_used`, and `fallback_language`—never silently swapping languages.
+2. **Pluggable Caching Architecture**:
+   - **SQLite**: Local SQLite WAL database with auto-pruning at `MAX_CACHE_ENTRIES` and TTL expiration.
+   - **Redis**: Production Redis integration with connection pooling, secret masking, and universal Redis 5.x/6.x/7.x compatibility via RESP2 (`protocol=2`).
+   - **Memory**: High-speed in-process thread-safe dictionary cache.
+3. **Capability-Level Circuit Breaker**: State machine (`CLOSED` $\rightarrow$ `OPEN` $\rightarrow$ `HALF_OPEN` with 1-probe concurrency lock) tracked individually for search, metadata, and transcript capabilities.
+4. **Single-Flight Request Coalescing**: Prevents cache stampedes by merging duplicate in-flight requests into a single upstream execution.
+5. **Multilingual Unicode Tokenization**: Native token splitting across Hindi (Devanagari), CJK (Chinese, Japanese), Korean (Hangul), Arabic, Cyrillic, and Latin scripts.
+6. **Hybrid Semantic Retrieval (In-Process)**: BM25s sparse retrieval fused via Reciprocal Rank Fusion (RRF) with dense vector embeddings / TF-IDF.
+7. **Multi-Video Research & Evidence Clustering**: Autonomous cross-video discovery with source channel diversity (`max_videos_per_channel=2`) and near-duplicate claim clustering.
+8. **Security & Production Hardening**:
+   - Constant-time Admin API Key authentication (`X-Admin-Key` / `Authorization: Bearer <KEY>`).
+   - Strict CORS origin validation for public and administrative endpoints.
+   - Per-IP Token-Bucket rate limiting on REST endpoints.
+   - Resource-safe query length and transcript segment bounding (`MAX_TRANSCRIPT_SEGMENTS`, `MAX_QUERY_LENGTH`).
 
 ---
 
@@ -69,10 +77,10 @@ FastMCP Server (Port 8000)
 ### 1. `youtube_search`
 Searches YouTube videos with deterministic post-filtering for dates and languages.
 - `query` (string, required)
-- `max_results` (int, default: 5)
+- `max_results` (int, default: 5, max: 25)
 - `language` (string, default: "en")
-- `published_after` (ISO date string, optional)
-- `published_before` (ISO date string, optional)
+- `published_after` (ISO date string `YYYY-MM-DD`, optional)
+- `published_before` (ISO date string `YYYY-MM-DD`, optional)
 
 ### 2. `youtube_video`
 Retrieves video metadata, view counts, upload date, tags, and chapter markers.
@@ -91,12 +99,18 @@ Pinpoints exact sections in long videos discussing a specific topic using hybrid
 - `video_id` (string, required)
 - `query` (string, required)
 - `max_results` (int, default: 5)
+- `language` (string, default: "en")
+- `fallback_language` (string, default: "en")
 
 ### 5. `youtube_research`
 Multi-video research discovery across diverse channels with near-duplicate claim clustering.
 - `query` (string, required)
 - `depth` ("quick" = 2 videos, "standard" = 3 videos, "deep" = 5 videos)
 - `max_videos_per_channel` (int, default: 2)
+- `language` (string, default: "en")
+- `fallback_language` (string, default: "en")
+- `published_after` (ISO date string `YYYY-MM-DD`, optional)
+- `published_before` (ISO date string `YYYY-MM-DD`, optional)
 
 ---
 
@@ -151,8 +165,11 @@ http://localhost:8000/mcp
 ## 🧪 Testing
 
 ```bash
-# Run all unit and integration tests
-uv run pytest tests -v
+# Run full unit and integration test suite
+uv run pytest -v
+
+# Run real Redis integration tests (requires local or remote Redis)
+uv run pytest tests/integration/test_redis_live.py -v
 
 # Run latency and concurrency benchmarks
 uv run pytest tests/benchmarks/test_latency.py -s

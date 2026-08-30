@@ -84,6 +84,8 @@ class TranscriptService:
             res.total_segments = len(res.segments)
             res.full_text = " ".join(s.text for s in res.segments)
             res.total_words = len(res.full_text.split())
+            if res.segments:
+                res.duration_seconds = res.segments[-1].end
 
         # 3. Store in cache
         await self.cache.set(

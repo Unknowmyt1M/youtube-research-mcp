@@ -394,5 +394,7 @@ class YtDlpProvider(
                         url=make_timestamp_url(video_id, start_sec),
                     )
                 )
+                if len(segments) >= settings.MAX_TRANSCRIPT_SEGMENTS:
+                    break
 
         return segments
