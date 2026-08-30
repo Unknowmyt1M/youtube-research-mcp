@@ -213,6 +213,11 @@ class YtDlpProvider(
             self._health.record_success(ProviderCapability.METADATA, latency_ms)
             return overview
 
+        except asyncio.TimeoutError:
+            self._health.record_failure(
+                ProviderCapability.METADATA, f"yt-dlp metadata timed out after {settings.REQUEST_TIMEOUT}s"
+            )
+            return None
         except Exception as e:
             self._health.record_failure(ProviderCapability.METADATA, str(e))
             return None
