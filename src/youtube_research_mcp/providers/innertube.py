@@ -37,6 +37,39 @@ class InnerTubeProvider(
     PLAYER_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
 
     CLIENT_CONFIGS = {
+        "MWEB": {
+            "context": {
+                "client": {
+                    "clientName": "MWEB",
+                    "clientVersion": "2.20250101.01.00",
+                    "hl": "en",
+                    "gl": "US",
+                    "utcOffsetMinutes": 0,
+                }
+            },
+            "headers": {
+                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+                "Content-Type": "application/json",
+                "X-YouTube-Client-Name": "2",
+                "X-YouTube-Client-Version": "2.20250101.01.00",
+            },
+        },
+        "ANDROID_TESTSUITE": {
+            "context": {
+                "client": {
+                    "clientName": "ANDROID_TESTSUITE",
+                    "clientVersion": "1.9",
+                    "hl": "en",
+                    "gl": "US",
+                }
+            },
+            "headers": {
+                "User-Agent": "Google-HTTP-Java-Client/1.43.3 (gzip)",
+                "Content-Type": "application/json",
+                "X-YouTube-Client-Name": "30",
+                "X-YouTube-Client-Version": "1.9",
+            },
+        },
         "WEB": {
             "context": {
                 "client": {
@@ -52,24 +85,6 @@ class InnerTubeProvider(
                 "Content-Type": "application/json",
                 "X-YouTube-Client-Name": "1",
                 "X-YouTube-Client-Version": "2.20250101.01.00",
-            },
-        },
-        "ANDROID": {
-            "context": {
-                "client": {
-                    "clientName": "ANDROID",
-                    "clientVersion": "19.29.35",
-                    "androidSdkVersion": 34,
-                    "hl": "en",
-                    "gl": "US",
-                    "utcOffsetMinutes": 0,
-                }
-            },
-            "headers": {
-                "User-Agent": "com.google.android.youtube/19.29.35 (Linux; U; Android 14; US) gzip",
-                "Content-Type": "application/json",
-                "X-YouTube-Client-Name": "3",
-                "X-YouTube-Client-Version": "19.29.35",
             },
         },
         "WEB_EMBEDDED": {
@@ -290,7 +305,7 @@ class InnerTubeProvider(
 
         start_t = time.perf_counter()
         clean_id = extract_video_id(video_id)
-        profiles_to_try = ["WEB", "ANDROID", "WEB_EMBEDDED"]
+        profiles_to_try = ["MWEB", "ANDROID_TESTSUITE", "WEB", "WEB_EMBEDDED"]
 
         try:
             client = await self.get_client()
@@ -452,7 +467,7 @@ class InnerTubeProvider(
 
         start_t = time.perf_counter()
         clean_id = extract_video_id(video_id)
-        profiles_to_try = ["WEB", "ANDROID", "WEB_EMBEDDED"]
+        profiles_to_try = ["MWEB", "ANDROID_TESTSUITE", "WEB", "WEB_EMBEDDED"]
 
         try:
             client = await self.get_client()

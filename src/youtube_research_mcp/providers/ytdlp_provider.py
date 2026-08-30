@@ -72,8 +72,7 @@ class YtDlpProvider(
             "no_warnings": True,
             "extractor_args": {
                 "youtube": {
-                    "player_client": ["android", "ios", "tv_embedded", "mweb"],
-                    "player_skip": ["webpage", "configs"],
+                    "player_client": ["mweb", "ios", "android"],
                 }
             },
         }
