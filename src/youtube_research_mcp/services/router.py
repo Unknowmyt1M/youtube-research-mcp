@@ -16,6 +16,9 @@ from youtube_research_mcp.providers.base import (
 )
 from youtube_research_mcp.providers.commercial import CommercialProvider
 from youtube_research_mcp.providers.innertube import InnerTubeProvider
+from youtube_research_mcp.providers.youtube_transcript_api_provider import (
+    YouTubeTranscriptApiProvider,
+)
 from youtube_research_mcp.providers.ytdlp_provider import YtDlpProvider
 from youtube_research_mcp.utils.metrics import metrics
 from youtube_research_mcp.utils.single_flight import get_single_flight
@@ -27,6 +30,7 @@ class ProviderRouter:
     """Adaptive capability-aware failover coordinator with async single-flight request coalescing."""
 
     def __init__(self):
+        self.yta = YouTubeTranscriptApiProvider()
         self.innertube = InnerTubeProvider()
         self.ytdlp = YtDlpProvider()
         self.commercial = CommercialProvider()
@@ -40,7 +44,8 @@ class ProviderRouter:
             self.ytdlp,
         ]
         self.transcript_providers: List[BaseTranscriptProvider] = [
-            self.ytdlp,  # Tier 1 for transcripts due to anti-bot client rotation
+            self.yta,
+            self.ytdlp,
             self.innertube,
             self.commercial,
         ]
@@ -169,6 +174,7 @@ class ProviderRouter:
 
     def get_health_report(self) -> List[ProviderHealthReport]:
         return [
+            self.yta.health.get_report(),
             self.innertube.health.get_report(),
             self.ytdlp.health.get_report(),
             self.commercial.health.get_report(),
@@ -176,6 +182,7 @@ class ProviderRouter:
 
     async def close(self):
         """Close provider HTTP clients."""
+        await self.yta.close()
         await self.innertube.close()
         await self.ytdlp.close()
         await self.commercial.close()

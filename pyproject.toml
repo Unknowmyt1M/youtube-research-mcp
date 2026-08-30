@@ -20,6 +20,8 @@ dependencies = [
     "numpy>=1.26.0",
     "fastembed>=0.5.0",
     "bm25s>=0.2.5",
+    "youtube-transcript-api>=1.2.4",
+    "defusedxml>=0.7.1",
 ]
 
 [project.optional-dependencies]
