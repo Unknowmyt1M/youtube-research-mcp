@@ -10,6 +10,7 @@ from youtube_research_mcp.providers.base import (
     BaseMetadataProvider,
     BaseSearchProvider,
     BaseTranscriptProvider,
+    CircuitState,
     ProviderCapability,
     ProviderHealthReport,
 )
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 class ProviderRouter:
-    """Capability-aware failover coordinator with async single-flight request coalescing."""
+    """Adaptive capability-aware failover coordinator with async single-flight request coalescing."""
 
     def __init__(self):
         self.innertube = InnerTubeProvider()
@@ -45,6 +46,33 @@ class ProviderRouter:
         ]
         self.flight = get_single_flight()
 
+    def _get_adaptive_providers(
+        self, providers: List[Any], capability: ProviderCapability
+    ) -> List[Any]:
+        """Rank executable providers adaptively by circuit health, historical success rate, and latency."""
+        executable = [p for p in providers if p.health.can_execute(capability)]
+        if not executable:
+            return []
+
+        def _sort_key(provider_item):
+            idx, provider = provider_item
+            breaker = provider.health.breakers.get(capability)
+            if not breaker:
+                return (1, 0.0, 999999.0, idx)
+
+            # State priority: CLOSED (0), HALF_OPEN (1), OPEN (2)
+            state_val = 0 if breaker.state == CircuitState.CLOSED else (1 if breaker.state == CircuitState.HALF_OPEN else 2)
+            # Success rate: higher is better (negate for ascending sort)
+            success_rate = breaker.success_rate
+            # Avg latency: lower is better
+            latency = breaker.avg_latency_ms if breaker.avg_latency_ms > 0 else 500.0
+
+            return (state_val, -success_rate, latency, idx)
+
+        enumerated = list(enumerate(executable))
+        enumerated.sort(key=_sort_key)
+        return [p for _, p in enumerated]
+
     async def search(
         self,
         query: str,
@@ -57,9 +85,10 @@ class ProviderRouter:
 
         async def _do_search():
             metrics.record_request("search")
-            for provider in self.search_providers:
-                if not provider.health.can_execute(ProviderCapability.SEARCH):
-                    continue
+            candidates = self._get_adaptive_providers(
+                self.search_providers, ProviderCapability.SEARCH
+            )
+            for provider in candidates:
                 try:
                     res = await provider.search(
                         query=query,
@@ -83,9 +112,10 @@ class ProviderRouter:
 
         async def _do_metadata():
             metrics.record_request("metadata")
-            for provider in self.metadata_providers:
-                if not provider.health.can_execute(ProviderCapability.METADATA):
-                    continue
+            candidates = self._get_adaptive_providers(
+                self.metadata_providers, ProviderCapability.METADATA
+            )
+            for provider in candidates:
                 try:
                     res = await provider.get_video(video_id)
                     if res:
@@ -109,9 +139,10 @@ class ProviderRouter:
 
         async def _do_transcript():
             metrics.record_request("transcript")
-            for provider in self.transcript_providers:
-                if not provider.health.can_execute(ProviderCapability.TRANSCRIPT):
-                    continue
+            candidates = self._get_adaptive_providers(
+                self.transcript_providers, ProviderCapability.TRANSCRIPT
+            )
+            for provider in candidates:
                 try:
                     res = await provider.get_transcript(
                         video_id=video_id,

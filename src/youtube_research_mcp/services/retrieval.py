@@ -4,7 +4,8 @@ import logging
 import math
 import re
 import time
-from typing import Any, Dict, List, Optional, Tuple
+import unicodedata
+from typing import Any, Dict, List, Optional, Set, Tuple
 import bm25s
 import numpy as np
 
@@ -21,10 +22,163 @@ MULTILINGUAL_TOKEN_PATTERN = re.compile(
     r"[\u0900-\u097F]+|[\u4e00-\u9fff]+|[\u3040-\u30ff]+|[\uac00-\ud7af]+|[\u1100-\u11ff]+|[\u0600-\u06FF]+|[\u0400-\u04FF]+|[a-zA-Z0-9_-]+"
 )
 
+# Cross-language / transliteration semantic dictionary (Devanagari Hindi <-> Hinglish <-> English)
+CROSS_LINGUAL_SYNONYM_MAP: Dict[str, List[str]] = {
+    # Tech & Concepts
+    "quantum": ["क्वांटम", "quantum", "kvantam"],
+    "क्वांटम": ["quantum", "kvantam"],
+    "computing": ["कंप्यूटिंग", "कंप्यूटर", "computing", "computer"],
+    "कंप्यूटिंग": ["computing", "computer"],
+    "कंप्यूटर": ["computer", "computing"],
+    "ai": ["आर्टिफिशियल", "इंटेलिजेंस", "कृत्रिम", "बुद्धिमत्ता", "ai", "artificial"],
+    "artificial": ["आर्टिफिशियल", "कृत्रिम", "artificial"],
+    "intelligence": ["इंटेलिजेंस", "बुद्धिमत्ता", "intelligence"],
+    "machine": ["मशीन", "machine"],
+    "मशीन": ["machine"],
+    "learning": ["लर्निंग", "सीखना", "learning"],
+    "लर्निंग": ["learning"],
+    "neural": ["न्यूरल", "neural"],
+    "न्यूरल": ["neural"],
+    "network": ["नेटवर्क", "network"],
+    "नेटवर्क": ["network"],
+    "python": ["पायथन", "python"],
+    "पायथन": ["python"],
+    "code": ["कोड", "coding", "code"],
+    "coding": ["कोडिंग", "coding", "code"],
+    "कोड": ["code", "coding"],
+    "कोडिंग": ["coding", "code"],
+    "api": ["एपीआई", "api"],
+    "एपीआई": ["api"],
+    "database": ["डेटाबेस", "database"],
+    "डेटाबेस": ["database"],
+    "model": ["मॉडल", "model"],
+    "मॉडल": ["model"],
+    "transformer": ["ट्रांसफॉर्मर", "transformer"],
+    "data": ["डेटा", "data"],
+    "डेटा": ["data"],
+    "youtube": ["यूट्यूब", "youtube"],
+    "यूट्यूब": ["youtube"],
+    "video": ["वीडियो", "video"],
+    "वीडियो": ["video"],
+    "research": ["अनुसंधान", "रिसर्च", "खोज", "research"],
+    "अनुसंधान": ["research", "anushandhan"],
+    "रिसर्च": ["research"],
+
+    # Common Action / Query Words (Hinglish <-> Hindi <-> English)
+    "explain": ["समझाया", "समझाना", "समझें", "explain", "explained", "samjhaya", "samjhana", "samjhe"],
+    "explained": ["समझाया", "explain", "explained", "samjhaya"],
+    "explanation": ["विवरण", "समझाया", "explanation", "samjhaya"],
+    "samjhaya": ["समझाया", "explain", "explained"],
+    "samjhana": ["समझाना", "explain"],
+    "samjhe": ["समझें", "understand", "explain"],
+    "समझाया": ["explain", "explained", "samjhaya"],
+    "समझाना": ["explain", "samjhana"],
+    "समझें": ["understand", "explain", "samjhe"],
+    "how": ["कैसे", "how", "kaise"],
+    "kaise": ["कैसे", "how"],
+    "कैसे": ["how", "kaise"],
+    "what": ["क्या", "what", "kya"],
+    "kya": ["क्या", "what"],
+    "क्या": ["what", "kya"],
+    "why": ["क्यों", "why", "kyon", "kyu"],
+    "kyon": ["क्यों", "why"],
+    "kyu": ["क्यों", "why"],
+    "क्यों": ["why", "kyon", "kyu"],
+    "where": ["कहाँ", "कहा", "where", "kahan"],
+    "kahan": ["कहाँ", "where"],
+    "कहाँ": ["where", "kahan"],
+    "when": ["कब", "when", "kab"],
+    "kab": ["कब", "when"],
+    "कब": ["when", "kab"],
+    "use": ["उपयोग", "इस्तेमाल", "use", "using", "istamal", "istemaal"],
+    "using": ["उपयोग", "इस्तेमाल", "use", "using"],
+    "istamal": ["इस्तेमाल", "उपयोग", "use"],
+    "istemaal": ["इस्तेमाल", "उपयोग", "use"],
+    "उपयोग": ["use", "using", "usage"],
+    "इस्तेमाल": ["use", "using", "istamal"],
+    "work": ["काम", "कार्य", "work", "works", "working", "kaam"],
+    "works": ["काम", "work", "works", "kaam"],
+    "working": ["काम", "कार्य", "working", "kaam"],
+    "kaam": ["काम", "work", "works"],
+    "काम": ["work", "works", "working", "kaam"],
+    "start": ["शुरू", "शुरुआत", "start", "starting", "intro", "shuru"],
+    "shuru": ["शुरू", "start", "intro"],
+    "शुरू": ["start", "intro", "shuru"],
+    "conclusion": ["निष्कर्ष", "अंत", "conclusion", "summary", "ant"],
+    "summary": ["सारांश", "summary", "conclusion"],
+    "निष्कर्ष": ["conclusion", "summary"],
+    "अंत": ["conclusion", "end", "ant"],
+    "difference": ["अंतर", "difference", "diff", "antar"],
+    "antar": ["अंतर", "difference"],
+    "अंतर": ["difference", "antar"],
+    "feature": ["फीचर", "विशेषता", "feature", "features"],
+    "फीचर": ["feature", "features"],
+    "tutorial": ["ट्यूटोरियल", "tutorial", "guide", "guide"],
+    "ट्यूटोरियल": ["tutorial", "guide"],
+    "architecture": ["आर्किटेक्चर", "संरचना", "architecture"],
+    "आर्किटेक्चर": ["architecture"],
+}
+
+
+def normalize_query(query: str) -> str:
+    """Normalize query string safely: NFKC Unicode normalization, whitespace trimming, preserving tokens."""
+    if not query:
+        return ""
+    # Unicode NFKC normalization decomposes compatibility forms and recomposes canon
+    norm = unicodedata.normalize("NFKC", query)
+    # Collapse multiple whitespace characters
+    norm = re.sub(r"\s+", " ", norm).strip()
+    return norm
+
+
+def detect_script(text: str) -> str:
+    """Detect dominant writing script of a text (devanagari, cjk, hangul, arabic, cyrillic, latin, mixed)."""
+    counts = {
+        "devanagari": len(re.findall(r"[\u0900-\u097F]", text)),
+        "cjk": len(re.findall(r"[\u4e00-\u9fff\u3040-\u30ff]", text)),
+        "hangul": len(re.findall(r"[\uac00-\ud7af\u1100-\u11ff]", text)),
+        "arabic": len(re.findall(r"[\u0600-\u06FF]", text)),
+        "cyrillic": len(re.findall(r"[\u0400-\u04FF]", text)),
+        "latin": len(re.findall(r"[a-zA-Z]", text)),
+    }
+    total = sum(counts.values())
+    if total == 0:
+        return "unknown"
+
+    dominant_script, max_count = max(counts.items(), key=lambda x: x[1])
+    if max_count / total >= 0.5:
+        return dominant_script
+    return "mixed"
+
 
 def tokenize_multilingual(text: str) -> List[str]:
-    """Tokenize multi-script text (Hindi, CJK, Arabic, Cyrillic, English)."""
-    return [t.lower() for t in MULTILINGUAL_TOKEN_PATTERN.findall(text)]
+    """Tokenize multi-script text (Hindi, CJK, Hangul, Arabic, Cyrillic, English)."""
+    norm_text = normalize_query(text)
+    return [t.lower() for t in MULTILINGUAL_TOKEN_PATTERN.findall(norm_text)]
+
+
+def expand_cross_lingual_tokens(tokens: List[str]) -> List[str]:
+    """Expand tokens with cross-lingual synonyms and transliteration bridging terms."""
+    expanded: List[str] = list(tokens)
+    for t in tokens:
+        low_t = t.lower()
+        if low_t in CROSS_LINGUAL_SYNONYM_MAP:
+            for syn in CROSS_LINGUAL_SYNONYM_MAP[low_t]:
+                if syn not in expanded:
+                    expanded.append(syn)
+    return expanded
+
+
+def generate_subword_ngrams(tokens: List[str], min_n: int = 3, max_n: int = 4) -> List[str]:
+    """Generate character n-grams from word tokens to support morphological and transliteration matching."""
+    ngrams: List[str] = []
+    for token in tokens:
+        if len(token) < min_n:
+            continue
+        for n in range(min_n, min(max_n + 1, len(token) + 1)):
+            for i in range(len(token) - n + 1):
+                ngrams.append(token[i : i + n])
+    return ngrams
 
 
 _global_embedder: Optional[Any] = None
@@ -45,24 +199,30 @@ def get_embedder() -> Optional[Any]:
 
         _global_embedder = TextEmbedding(model_name=settings.EMBEDDING_MODEL)
     except (ImportError, OSError, Exception) as e:
-        logger.warning(f"Dense embedder unavailable ({e}), using lexical fallback.")
+        logger.warning(f"Dense embedder unavailable ({e}), using multilingual subword vector fallback.")
         _global_embedder = None
 
     return _global_embedder
 
 
-class LexicalTfidfFallback:
-    """Multilingual in-process TF-IDF vectorizer fallback when ONNX dense embedding is disabled."""
+class MultilingualSubwordTfidf:
+    """Multilingual in-process TF-IDF vectorizer with cross-lingual vocabulary bridging and character n-grams."""
 
     def __init__(self):
-        self.vocab: dict[str, int] = {}
+        self.vocab: Dict[str, int] = {}
         self.idf: np.ndarray = np.array([], dtype=np.float32)
 
+    def _extract_features(self, text: str) -> List[str]:
+        tokens = tokenize_multilingual(text)
+        expanded_tokens = expand_cross_lingual_tokens(tokens)
+        subwords = generate_subword_ngrams(expanded_tokens, min_n=3, max_n=4)
+        return expanded_tokens + subwords
+
     def fit_transform(self, docs: List[str]) -> np.ndarray:
-        tokenized_docs = [tokenize_multilingual(doc) for doc in docs]
-        vocab_set = set()
-        for doc in tokenized_docs:
-            vocab_set.update(doc)
+        doc_features = [self._extract_features(doc) for doc in docs]
+        vocab_set: Set[str] = set()
+        for feats in doc_features:
+            vocab_set.update(feats)
 
         self.vocab = {term: idx for idx, term in enumerate(sorted(vocab_set))}
         vocab_size = len(self.vocab)
@@ -74,9 +234,9 @@ class LexicalTfidfFallback:
         df = np.zeros(vocab_size, dtype=np.float32)
         tf_matrix = np.zeros((num_docs, vocab_size), dtype=np.float32)
 
-        for i, doc in enumerate(tokenized_docs):
-            seen_in_doc = set()
-            for term in doc:
+        for i, feats in enumerate(doc_features):
+            seen_in_doc: Set[int] = set()
+            for term in feats:
                 idx = self.vocab[term]
                 tf_matrix[i, idx] += 1
                 seen_in_doc.add(idx)
@@ -89,13 +249,13 @@ class LexicalTfidfFallback:
         return tfidf / np.maximum(norms, 1e-9)
 
     def transform(self, query: str) -> np.ndarray:
-        tokens = tokenize_multilingual(query)
+        feats = self._extract_features(query)
         vocab_size = len(self.vocab)
         if vocab_size == 0:
             return np.zeros(1, dtype=np.float32)
 
         tf = np.zeros(vocab_size, dtype=np.float32)
-        for t in tokens:
+        for t in feats:
             if t in self.vocab:
                 tf[self.vocab[t]] += 1
 
@@ -104,14 +264,18 @@ class LexicalTfidfFallback:
         return tfidf / max(norm, 1e-9)
 
 
+# Backwards compatibility alias for research engine
+LexicalTfidfFallback = MultilingualSubwordTfidf
+
+
 class HybridRetrievalIndex:
-    """In-process hybrid retrieval engine combining dense vectors (or TF-IDF) with BM25s sparse index."""
+    """In-process hybrid retrieval engine combining dense vectors (or multilingual subword TF-IDF) with BM25s sparse index."""
 
     def __init__(self, chunks: List[TranscriptChunk]):
         self.chunks = chunks
         self.corpus_texts = [c.text for c in chunks]
         self.embedder = get_embedder()
-        self.tfidf_fallback: Optional[LexicalTfidfFallback] = None
+        self.tfidf_fallback: Optional[MultilingualSubwordTfidf] = None
         self.is_dense_semantic: bool = self.embedder is not None
 
         if self.embedder is not None:
@@ -125,15 +289,19 @@ class HybridRetrievalIndex:
                 self.is_dense_semantic = False
 
         if self.embedder is None:
-            self.tfidf_fallback = LexicalTfidfFallback()
-            self.embeddings = self.tfidf_fallback.fit_transform(
-                self.corpus_texts
-            )
+            self.tfidf_fallback = MultilingualSubwordTfidf()
+            self.embeddings = self.tfidf_fallback.fit_transform(self.corpus_texts)
 
-        # Build BM25 sparse index with multilingual tokenization
-        tokenized_corpus = [tokenize_multilingual(t) for t in self.corpus_texts]
+        # Build BM25 sparse index with cross-lingual expanded tokens + subwords
+        tokenized_corpus = []
+        for text in self.corpus_texts:
+            tokens = tokenize_multilingual(text)
+            expanded = expand_cross_lingual_tokens(tokens)
+            subwords = generate_subword_ngrams(tokens, min_n=3, max_n=4)
+            tokenized_corpus.append(expanded + subwords)
+
         self.bm25 = bm25s.BM25(k1=settings.BM25_K1, b=settings.BM25_B)
-        self.bm25.index(tokenized_corpus)
+        self.bm25.index(tokenized_corpus, show_progress=False)
 
     def search(
         self, query: str, top_k: int = 5, k_rrf: int = 60
@@ -141,14 +309,18 @@ class HybridRetrievalIndex:
         if not self.chunks:
             return []
 
+        norm_query = normalize_query(query)
+        if not norm_query:
+            return []
+
         num_docs = len(self.chunks)
         effective_k = min(num_docs, max(top_k * 3, 10))
 
-        # --- A. Dense / Lexical TF-IDF Similarity ---
+        # --- A. Dense / Multilingual Subword TF-IDF Similarity ---
         if self.embedder is not None:
             try:
                 query_embed = np.array(
-                    list(self.embedder.embed([query])), dtype=np.float32
+                    list(self.embedder.embed([norm_query])), dtype=np.float32
                 )[0]
                 query_norm = np.linalg.norm(query_embed)
                 query_embed = query_embed / max(query_norm, 1e-9)
@@ -156,7 +328,7 @@ class HybridRetrievalIndex:
             except Exception:
                 dense_scores = np.zeros(num_docs, dtype=np.float32)
         elif self.tfidf_fallback is not None:
-            query_vec = self.tfidf_fallback.transform(query)
+            query_vec = self.tfidf_fallback.transform(norm_query)
             dense_scores = np.dot(self.embeddings, query_vec)
         else:
             dense_scores = np.zeros(num_docs, dtype=np.float32)
@@ -167,19 +339,26 @@ class HybridRetrievalIndex:
         }
 
         # --- B. Sparse BM25 Retrieval ---
-        query_tokens = [tokenize_multilingual(query)]
+        query_tokens = tokenize_multilingual(norm_query)
+        expanded_query_tokens = expand_cross_lingual_tokens(query_tokens)
+        subwords_query = generate_subword_ngrams(query_tokens, min_n=3, max_n=4)
+        search_tokens = [expanded_query_tokens + subwords_query]
+
         bm25_docs, bm25_scores = self.bm25.retrieve(
-            query_tokens, k=min(num_docs, effective_k)
+            search_tokens, k=min(num_docs, effective_k), show_progress=False
         )
 
-        bm25_rank_map = {}
+        bm25_rank_map: Dict[int, int] = {}
         if len(bm25_docs) > 0:
             for rank, doc_idx in enumerate(bm25_docs[0]):
                 bm25_rank_map[int(doc_idx)] = rank
 
-        # --- C. Reciprocal Rank Fusion (RRF) ---
+        # --- C. Reciprocal Rank Fusion (RRF) with Multi-Signal Boosting ---
+        low_query = norm_query.lower()
         fused: List[Tuple[float, int]] = []
+
         for idx in range(num_docs):
+            chunk_text = self.chunks[idx].text.lower()
             r_dense = dense_rank_map.get(idx, 9999)
             r_sparse = bm25_rank_map.get(idx, 9999)
 
@@ -188,8 +367,27 @@ class HybridRetrievalIndex:
                 1.0 / (k_rrf + r_sparse) if idx in bm25_rank_map else 0.0
             )
 
-            rrf_score = score_dense + score_sparse
-            fused.append((rrf_score, idx))
+            rrf_base = score_dense + score_sparse
+
+            # 1. Exact phrase boost: boost if the full query string appears verbatim
+            phrase_boost = 0.0
+            if len(low_query) > 3 and low_query in chunk_text:
+                phrase_boost = 0.02
+
+            # 2. Query terms coverage boost: percentage of distinctive query words found in chunk
+            coverage_boost = 0.0
+            if query_tokens:
+                matched_count = sum(
+                    1
+                    for qt in query_tokens
+                    if qt in chunk_text
+                    or any(syn in chunk_text for syn in CROSS_LINGUAL_SYNONYM_MAP.get(qt, []))
+                )
+                coverage_ratio = matched_count / len(query_tokens)
+                coverage_boost = 0.015 * coverage_ratio
+
+            total_score = rrf_base + phrase_boost + coverage_boost
+            fused.append((total_score, idx))
 
         fused.sort(key=lambda x: x[0], reverse=True)
         max_rrf = fused[0][0] if fused else 1.0

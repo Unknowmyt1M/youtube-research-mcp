@@ -448,3 +448,6 @@ def register_openai_connector_routes(mcp):
             return JSONResponse(res.model_dump(), headers=cors)
         except ValueError as ve:
             return JSONResponse({"status": "error", "message": str(ve)}, status_code=400, headers=cors)
+
+
+register_openai_connector = register_openai_connector_routes

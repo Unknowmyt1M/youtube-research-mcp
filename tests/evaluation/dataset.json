@@ -1,0 +1,242 @@
+{
+  "test_cases": [
+    {
+      "id": "en_en_01",
+      "category": "english_english",
+      "video_id": "vid_eval_01",
+      "transcript_language": "en",
+      "query": "how to implement single flight request coalescing in python",
+      "query_language": "en",
+      "expected_chunk_id": 2,
+      "expected_time_range": "00:20 - 00:30",
+      "expected_keywords": ["single-flight", "coalescing", "python"],
+      "chunks": [
+        {
+          "chunk_id": 0,
+          "start_seconds": 0.0,
+          "end_seconds": 10.0,
+          "time_range": "00:00 - 00:10",
+          "text": "Welcome to our video on modern backend system design and microservices."
+        },
+        {
+          "chunk_id": 1,
+          "start_seconds": 10.0,
+          "end_seconds": 20.0,
+          "time_range": "00:10 - 00:20",
+          "text": "Today we will discuss database optimization, connection pooling, and caching."
+        },
+        {
+          "chunk_id": 2,
+          "start_seconds": 20.0,
+          "end_seconds": 30.0,
+          "time_range": "00:20 - 00:30",
+          "text": "Now let us implement single flight request coalescing in Python using asyncio locks to prevent cache stampedes."
+        },
+        {
+          "chunk_id": 3,
+          "start_seconds": 30.0,
+          "end_seconds": 40.0,
+          "time_range": "00:30 - 00:40",
+          "text": "In conclusion, single-flight protects downstream upstream APIs from redundant duplicate spikes."
+        }
+      ]
+    },
+    {
+      "id": "hi_hi_01",
+      "category": "hindi_hindi",
+      "video_id": "vid_eval_02",
+      "transcript_language": "hi",
+      "query": "मशीन लर्निंग और न्यूरल नेटवर्क कैसे काम करते हैं",
+      "query_language": "hi",
+      "expected_chunk_id": 1,
+      "expected_time_range": "00:10 - 00:20",
+      "expected_keywords": ["मशीन लर्निंग", "न्यूरल नेटवर्क"],
+      "chunks": [
+        {
+          "chunk_id": 0,
+          "start_seconds": 0.0,
+          "end_seconds": 10.0,
+          "time_range": "00:00 - 00:10",
+          "text": "नमस्ते दोस्तों, आज हम कंप्यूटर साइंस के आधुनिक विषयों पर चर्चा करेंगे।"
+        },
+        {
+          "chunk_id": 1,
+          "start_seconds": 10.0,
+          "end_seconds": 20.0,
+          "time_range": "00:10 - 00:20",
+          "text": "यहाँ हम गहराई से समझेंगे कि मशीन लर्निंग और न्यूरल नेटवर्क कैसे काम करते हैं और बैकप्रॉपैगैशन क्या है।"
+        },
+        {
+          "chunk_id": 2,
+          "start_seconds": 20.0,
+          "end_seconds": 30.0,
+          "time_range": "00:20 - 00:30",
+          "text": "यह हिस्सा पूरी तरह से वेब डेवलपमेंट और HTML CSS से संबंधित है।"
+        }
+      ]
+    },
+    {
+      "id": "cross_hi_en_01",
+      "category": "cross_language_hi_en",
+      "video_id": "vid_eval_03",
+      "transcript_language": "hi",
+      "query": "how is quantum computing explained in this video",
+      "query_language": "en",
+      "expected_chunk_id": 1,
+      "expected_time_range": "00:10 - 00:20",
+      "expected_keywords": ["क्वांटम", "कंप्यूटिंग", "समझाया"],
+      "chunks": [
+        {
+          "chunk_id": 0,
+          "start_seconds": 0.0,
+          "end_seconds": 10.0,
+          "time_range": "00:00 - 00:10",
+          "text": "नमस्ते, इस ट्यूटोरियल में हम भौतिकी और गणित के बुनियादी सिद्धांतों से शुरुआत करेंगे।"
+        },
+        {
+          "chunk_id": 1,
+          "start_seconds": 10.0,
+          "end_seconds": 20.0,
+          "time_range": "00:10 - 00:20",
+          "text": "इस मुख्य भाग में हमने विस्तार से क्वांटम कंप्यूटिंग और क्यूबिट्स के सिद्धांत को समझाया है।"
+        },
+        {
+          "chunk_id": 2,
+          "start_seconds": 20.0,
+          "end_seconds": 30.0,
+          "time_range": "00:20 - 00:30",
+          "text": "वीडियो के अंत में हम सारांश और आगामी एपिसोड की जानकारी प्रस्तुत करते हैं।"
+        }
+      ]
+    },
+    {
+      "id": "cross_en_hi_01",
+      "category": "cross_language_en_hi",
+      "video_id": "vid_eval_04",
+      "transcript_language": "en",
+      "query": "आर्टिफिशियल इंटेलिजेंस और मशीन लर्निंग का उपयोग",
+      "query_language": "hi",
+      "expected_chunk_id": 2,
+      "expected_time_range": "00:20 - 00:30",
+      "expected_keywords": ["artificial intelligence", "machine learning"],
+      "chunks": [
+        {
+          "chunk_id": 0,
+          "start_seconds": 0.0,
+          "end_seconds": 10.0,
+          "time_range": "00:00 - 00:10",
+          "text": "In this introduction we go over basic computer hardware and memory registers."
+        },
+        {
+          "chunk_id": 1,
+          "start_seconds": 10.0,
+          "end_seconds": 20.0,
+          "time_range": "00:10 - 00:20",
+          "text": "Network protocols like TCP, UDP and HTTP are fundamental to the modern internet."
+        },
+        {
+          "chunk_id": 2,
+          "start_seconds": 20.0,
+          "end_seconds": 30.0,
+          "time_range": "00:20 - 00:30",
+          "text": "Here is how to use artificial intelligence and machine learning models in modern production software."
+        }
+      ]
+    },
+    {
+      "id": "hinglish_en_01",
+      "category": "hinglish_english",
+      "video_id": "vid_eval_05",
+      "transcript_language": "hi-Latn",
+      "query": "explain fastmcp server architecture and tool registration",
+      "query_language": "en",
+      "expected_chunk_id": 1,
+      "expected_time_range": "00:10 - 00:20",
+      "expected_keywords": ["fastmcp", "architecture", "tool"],
+      "chunks": [
+        {
+          "chunk_id": 0,
+          "start_seconds": 0.0,
+          "end_seconds": 10.0,
+          "time_range": "00:00 - 00:10",
+          "text": "aaj hum python project setup karenge uv virtual environment ke sath."
+        },
+        {
+          "chunk_id": 1,
+          "start_seconds": 10.0,
+          "end_seconds": 20.0,
+          "time_range": "00:10 - 00:20",
+          "text": "is section me FastMCP server architecture aur tool registration ka complete code explain kiya hai."
+        },
+        {
+          "chunk_id": 2,
+          "start_seconds": 20.0,
+          "end_seconds": 30.0,
+          "time_range": "00:20 - 00:30",
+          "text": "last me hum testing aur pytest unit tests run karke verification karenge."
+        }
+      ]
+    },
+    {
+      "id": "hinglish_hi_01",
+      "category": "hinglish_hindi",
+      "video_id": "vid_eval_06",
+      "transcript_language": "hi-Latn",
+      "query": "डेटाबेस और कैशिंग कैसे काम करता है",
+      "query_language": "hi",
+      "expected_chunk_id": 1,
+      "expected_time_range": "00:10 - 00:20",
+      "expected_keywords": ["database", "cache", "kaam"],
+      "chunks": [
+        {
+          "chunk_id": 0,
+          "start_seconds": 0.0,
+          "end_seconds": 10.0,
+          "time_range": "00:00 - 00:10",
+          "text": "shuruat me hum frontend react aur tailwind css components design karenge."
+        },
+        {
+          "chunk_id": 1,
+          "start_seconds": 10.0,
+          "end_seconds": 20.0,
+          "time_range": "00:10 - 00:20",
+          "text": "ab dekhte hain ki backend me database aur redis caching kaise kaam karta hai aur queries fast kaise hoti hain."
+        },
+        {
+          "chunk_id": 2,
+          "start_seconds": 20.0,
+          "end_seconds": 30.0,
+          "time_range": "00:20 - 00:30",
+          "text": "docker container build karke cloud par deploy karne ka step-by-step process."
+        }
+      ]
+    },
+    {
+      "id": "tech_01",
+      "category": "technical",
+      "video_id": "vid_eval_07",
+      "transcript_language": "en",
+      "query": "GPT-4 and Transformer API integration in Python",
+      "query_language": "en",
+      "expected_chunk_id": 0,
+      "expected_time_range": "00:00 - 00:10",
+      "expected_keywords": ["GPT-4", "Transformer", "API", "Python"],
+      "chunks": [
+        {
+          "chunk_id": 0,
+          "start_seconds": 0.0,
+          "end_seconds": 10.0,
+          "time_range": "00:00 - 00:10",
+          "text": "In this guide we build a production GPT-4 and Transformer API integration in Python with error handling."
+        },
+        {
+          "chunk_id": 1,
+          "start_seconds": 10.0,
+          "end_seconds": 20.0,
+          "time_range": "00:10 - 00:20",
+          "text": "CSS layout styling with flexbox and grid for responsive mobile design."
+        }
+      ]
+    }
+  ]
+}

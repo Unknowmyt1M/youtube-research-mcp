@@ -54,6 +54,58 @@ class InnerTubeProvider(
                 "X-YouTube-Client-Version": "2.20250101.01.00",
             },
         },
+        "ANDROID": {
+            "context": {
+                "client": {
+                    "clientName": "ANDROID",
+                    "clientVersion": "19.29.35",
+                    "androidSdkVersion": 34,
+                    "hl": "en",
+                    "gl": "US",
+                    "utcOffsetMinutes": 0,
+                }
+            },
+            "headers": {
+                "User-Agent": "com.google.android.youtube/19.29.35 (Linux; U; Android 14; US) gzip",
+                "Content-Type": "application/json",
+                "X-YouTube-Client-Name": "3",
+                "X-YouTube-Client-Version": "19.29.35",
+            },
+        },
+        "WEB_EMBEDDED": {
+            "context": {
+                "client": {
+                    "clientName": "WEB_EMBEDDED_PLAYER",
+                    "clientVersion": "1.20250101.01.00",
+                    "hl": "en",
+                    "gl": "US",
+                    "utcOffsetMinutes": 0,
+                }
+            },
+            "headers": {
+                "User-Agent": settings.USER_AGENT,
+                "Content-Type": "application/json",
+                "X-YouTube-Client-Name": "56",
+                "X-YouTube-Client-Version": "1.20250101.01.00",
+            },
+        },
+        "TV_EMBEDDED": {
+            "context": {
+                "client": {
+                    "clientName": "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
+                    "clientVersion": "2.0",
+                    "hl": "en",
+                    "gl": "US",
+                    "utcOffsetMinutes": 0,
+                }
+            },
+            "headers": {
+                "User-Agent": "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
+                "Content-Type": "application/json",
+                "X-YouTube-Client-Name": "85",
+                "X-YouTube-Client-Version": "2.0",
+            },
+        },
     }
 
     def __init__(self):
@@ -238,41 +290,48 @@ class InnerTubeProvider(
 
         start_t = time.perf_counter()
         clean_id = extract_video_id(video_id)
-        cfg = self.CLIENT_CONFIGS["WEB"]
-        payload = {
-            "context": cfg["context"],
-            "videoId": clean_id,
-        }
+        profiles_to_try = ["WEB", "ANDROID", "WEB_EMBEDDED"]
 
         try:
             client = await self.get_client()
-            resp = await client.post(
-                self.PLAYER_URL, headers=cfg["headers"], json=payload
+            last_err = None
+
+            for profile in profiles_to_try:
+                cfg = self.CLIENT_CONFIGS[profile]
+                payload = {
+                    "context": cfg["context"],
+                    "videoId": clean_id,
+                }
+                try:
+                    resp = await client.post(
+                        self.PLAYER_URL, headers=cfg["headers"], json=payload
+                    )
+                    if resp.status_code != 200:
+                        last_err = f"HTTP {resp.status_code} on profile {profile}"
+                        continue
+
+                    data = resp.json()
+                    playability = data.get("playabilityStatus", {}).get("status")
+                    if playability != "OK":
+                        last_err = f"Playability {playability} on profile {profile}"
+                        continue
+
+                    overview = self._parse_player_metadata(data, clean_id)
+                    if not overview:
+                        last_err = "Malformed player metadata structure"
+                        continue
+
+                    latency_ms = (time.perf_counter() - start_t) * 1000.0
+                    self._health.record_success(ProviderCapability.METADATA, latency_ms)
+                    return overview
+                except Exception as ex:
+                    last_err = str(ex)
+                    continue
+
+            self._health.record_failure(
+                ProviderCapability.METADATA, last_err or "All InnerTube metadata profiles failed"
             )
-            if resp.status_code != 200:
-                self._health.record_failure(
-                    ProviderCapability.METADATA, f"HTTP {resp.status_code}"
-                )
-                return None
-
-            data = resp.json()
-            playability = data.get("playabilityStatus", {}).get("status")
-            if playability != "OK":
-                self._health.record_failure(
-                    ProviderCapability.METADATA, f"Playability: {playability}"
-                )
-                return None
-
-            overview = self._parse_player_metadata(data, clean_id)
-            if not overview:
-                self._health.record_failure(
-                    ProviderCapability.METADATA, "Malformed player metadata structure"
-                )
-                return None
-
-            latency_ms = (time.perf_counter() - start_t) * 1000.0
-            self._health.record_success(ProviderCapability.METADATA, latency_ms)
-            return overview
+            return None
 
         except Exception as e:
             self._health.record_failure(ProviderCapability.METADATA, str(e))
@@ -387,32 +446,42 @@ class InnerTubeProvider(
 
         start_t = time.perf_counter()
         clean_id = extract_video_id(video_id)
-        cfg = self.CLIENT_CONFIGS["WEB"]
-        payload = {
-            "context": cfg["context"],
-            "videoId": clean_id,
-        }
+        profiles_to_try = ["WEB", "ANDROID", "WEB_EMBEDDED"]
 
         try:
             client = await self.get_client()
-            resp = await client.post(
-                self.PLAYER_URL, headers=cfg["headers"], json=payload
-            )
-            if resp.status_code != 200:
-                self._health.record_failure(
-                    ProviderCapability.TRANSCRIPT, f"HTTP {resp.status_code}"
-                )
-                return None
+            tracks = []
+            last_err = None
 
-            player_data = resp.json()
-            tracks = (
-                player_data.get("captions", {})
-                .get("playerCaptionsTracklistRenderer", {})
-                .get("captionTracks", [])
-            )
+            for profile in profiles_to_try:
+                cfg = self.CLIENT_CONFIGS[profile]
+                payload = {
+                    "context": cfg["context"],
+                    "videoId": clean_id,
+                }
+                try:
+                    resp = await client.post(
+                        self.PLAYER_URL, headers=cfg["headers"], json=payload
+                    )
+                    if resp.status_code != 200:
+                        last_err = f"HTTP {resp.status_code} on {profile}"
+                        continue
+
+                    player_data = resp.json()
+                    tracks = (
+                        player_data.get("captions", {})
+                        .get("playerCaptionsTracklistRenderer", {})
+                        .get("captionTracks", [])
+                    )
+                    if tracks:
+                        break
+                except Exception as ex:
+                    last_err = str(ex)
+                    continue
+
             if not tracks:
                 self._health.record_failure(
-                    ProviderCapability.TRANSCRIPT, "No caption tracks in InnerTube"
+                    ProviderCapability.TRANSCRIPT, last_err or "No caption tracks in InnerTube"
                 )
                 return None
 
