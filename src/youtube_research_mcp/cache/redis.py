@@ -50,6 +50,7 @@ class RedisCache(BaseCache):
 
                         self._client = aioredis.from_url(
                             self.redis_url,
+                            protocol=2,
                             max_connections=settings.REDIS_MAX_CONNECTIONS,
                             socket_timeout=settings.REDIS_SOCKET_TIMEOUT,
                             socket_connect_timeout=settings.REDIS_CONNECT_TIMEOUT,
@@ -207,12 +208,12 @@ class RedisCache(BaseCache):
         """Gracefully close client connection pool."""
         if self._client is not None:
             try:
-                if hasattr(self._client, "close"):
-                    res = self._client.close()
+                if hasattr(self._client, "aclose"):
+                    res = self._client.aclose()
                     if asyncio.iscoroutine(res):
                         await res
-                elif hasattr(self._client, "aclose"):
-                    res = self._client.aclose()
+                elif hasattr(self._client, "close"):
+                    res = self._client.close()
                     if asyncio.iscoroutine(res):
                         await res
             except Exception:

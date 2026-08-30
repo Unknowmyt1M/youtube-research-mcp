@@ -55,4 +55,4 @@ async def test_redis_cache_mocked_methods():
 
     # Test close
     await cache.close()
-    mock_redis.close.assert_called_once()
+    assert mock_redis.aclose.called or mock_redis.close.called

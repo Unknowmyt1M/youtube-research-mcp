@@ -88,6 +88,24 @@ def test_cache_factory_selects_redis():
 
 
 @pytest.mark.asyncio
+async def test_redis_client_uses_protocol_2_for_redis_5_compatibility():
+    """REDIS-001 Regression Test: Verify aioredis client is configured with protocol=2 for universal Redis <6 & >=6 compatibility."""
+    cache = RedisCache("redis://localhost:6380/0")
+    mock_client = AsyncMockRedisClient()
+
+    with patch("redis.asyncio.from_url", return_value=mock_client) as mock_from_url:
+        client = await cache._get_client()
+        assert client is mock_client
+        mock_from_url.assert_called_once()
+        _, kwargs = mock_from_url.call_args
+        assert kwargs.get("protocol") == 2
+        assert kwargs.get("socket_timeout") == settings.REDIS_SOCKET_TIMEOUT
+        assert kwargs.get("socket_connect_timeout") == settings.REDIS_CONNECT_TIMEOUT
+        assert kwargs.get("max_connections") == settings.REDIS_MAX_CONNECTIONS
+    await cache.close()
+
+
+@pytest.mark.asyncio
 async def test_redis_concurrent_client_initialization():
     """Verify concurrent _get_client calls do not create duplicate Redis clients."""
     cache = RedisCache("redis://localhost:6379/0")
@@ -101,6 +119,39 @@ async def test_redis_concurrent_client_initialization():
         for c in clients:
             assert c is mock_client
     await cache.close()
+
+
+@pytest.mark.asyncio
+async def test_redis_ttl_parity_defaults():
+    """REDIS-003 Test: Verify Redis default positive TTL matches SQLite (7 days), and overrides work."""
+    cache = RedisCache("redis://localhost:6379/0")
+    mock_redis = AsyncMock()
+    cache._client = mock_redis
+
+    # 1. Default positive TTL (should default to CACHE_TTL_METADATA = 604800s / 7d)
+    await cache.set("default_key", {"foo": "bar"})
+    _, kwargs = mock_redis.set.call_args
+    assert kwargs.get("ex") == settings.CACHE_TTL_METADATA
+    assert kwargs.get("ex") == 604800
+
+    # 2. Explicit ttl overrides default
+    mock_redis.reset_mock()
+    await cache.set("override_key", {"foo": "bar"}, ttl=300)
+    _, kwargs = mock_redis.set.call_args
+    assert kwargs.get("ex") == 300
+
+    # 3. Explicit ttl_seconds overrides default
+    mock_redis.reset_mock()
+    await cache.set("override_sec_key", {"foo": "bar"}, ttl_seconds=120)
+    _, kwargs = mock_redis.set.call_args
+    assert kwargs.get("ex") == 120
+
+    # 4. Default negative TTL (should default to NEGATIVE_CACHE_TTL = 600s / 10m)
+    mock_redis.reset_mock()
+    await cache.set_negative("neg_key", reason="not found")
+    _, kwargs = mock_redis.set.call_args
+    assert kwargs.get("ex") == settings.NEGATIVE_CACHE_TTL
+    assert kwargs.get("ex") == 600
 
 
 @pytest.mark.asyncio

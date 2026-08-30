@@ -45,3 +45,6 @@ packages = ["src/youtube_research_mcp"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "redis: marks tests that require a live Redis instance",
+]
