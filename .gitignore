@@ -63,3 +63,5 @@ htmlcov/
 # Binaries & Scratch
 bin/
 scratch/
+*.nd
+prompt.*

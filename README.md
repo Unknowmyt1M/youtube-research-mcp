@@ -12,11 +12,11 @@ Designed specifically for AI pair programmers and reasoning models (ChatGPT, Cla
 
 ---
 
-## ⚡ Performance & Latency Benchmarks (Build 3)
+## ⚡ Performance & In-Process Latency Benchmarks
 
-Measured directly on Windows 11 / Python 3.11 with SQLite WAL Mode & Shared HTTP/2 Connection Pooling:
+Measured directly on Windows 11 / Python 3.11 with SQLite WAL Mode & FastMCP in-process execution:
 
-### 1. Operation Latencies
+### 1. In-Process Operation Latencies
 | Operation | Fresh Latency (P50) | Cached Latency (P50) | Cached Latency (P95) | Concurrency (100 reqs) |
 | :--- | :--- | :--- | :--- | :--- |
 | **`youtube_search`** | **~7.4 ms** | **~7.1 ms** | **~7.8 ms** | **2.83 ms / req** |
@@ -24,17 +24,18 @@ Measured directly on Windows 11 / Python 3.11 with SQLite WAL Mode & Shared HTTP
 | **`youtube_transcript`** | **~8.0 ms** | **~6.5 ms** | **~7.7 ms** | **2.45 ms / req** |
 | **`youtube_find_in_video` (Hybrid RRF)** | **~20.9 ms** | **~18.2 ms** | **~46.1 ms** | **6.10 ms / req** |
 
-### 2. High-Concurrency Load Harness (Separated Workloads)
+### 2. High-Concurrency Single-Flight Load Harness (Separated Workloads)
 | Workload | Concurrency | P50 Latency | P95 Latency | P99 Latency | Throughput | Single-Flight Coalesced |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Cached Workload** | 10 reqs | 0.029 ms | 0.045 ms | 0.049 ms | 4,080 req/s | 0 (Direct Cache Hits) |
 | **Cached Workload** | 50 reqs | 0.019 ms | 0.031 ms | 0.041 ms | 12,616 req/s | 0 (Direct Cache Hits) |
 | **Cached Workload** | 100 reqs | 0.022 ms | 0.027 ms | 0.030 ms | 8,411 req/s | 0 (Direct Cache Hits) |
-| **Fresh Retrieval Workload** | 10 reqs | 2.41 ms | 3.44 ms | 3.88 ms | 377 req/s | 9 coalesced (1 upstream) |
-| **Fresh Retrieval Workload** | 50 reqs | 2.13 ms | 3.16 ms | 3.69 ms | 426 req/s | 49 coalesced (1 upstream) |
-| **Fresh Retrieval Workload** | 100 reqs | 3.39 ms | 4.41 ms | 4.79 ms | 310 req/s | 99 coalesced (1 upstream) |
+| **Fresh Retrieval Workload** | 10 reqs | 2.41 ms | 3.44 ms | 3.88 ms | 377 req/s | 9 coalesced (1 in-process execution) |
+| **Fresh Retrieval Workload** | 50 reqs | 2.13 ms | 3.16 ms | 3.69 ms | 426 req/s | 49 coalesced (1 in-process execution) |
+| **Fresh Retrieval Workload** | 100 reqs | 3.39 ms | 4.41 ms | 4.79 ms | 310 req/s | 99 coalesced (1 in-process execution) |
 
-*Note: Benchmarks reflect local execution environment on Python 3.11 with SQLite WAL and FastMCP in-process transport.*
+> [!NOTE]
+> **Benchmark Transparency Notice**: The reported throughput numbers measure **in-process async single-flight coalescing and in-memory retrieval performance** (e.g. coalescing 100 concurrent AI agent queries onto a single execution to protect downstream systems). They do **NOT** represent raw/fresh YouTube HTTP request throughput. Real-world un-cached network requests to YouTube remain subject to standard network latency and YouTube's per-IP rate limits.
 
 ---
 
