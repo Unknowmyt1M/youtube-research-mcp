@@ -292,13 +292,12 @@ class HybridRetrievalIndex:
             self.tfidf_fallback = MultilingualSubwordTfidf()
             self.embeddings = self.tfidf_fallback.fit_transform(self.corpus_texts)
 
-        # Build BM25 sparse index with cross-lingual expanded tokens + subwords
+        # Build BM25 sparse index with cross-lingual expanded tokens (without raw subword n-grams)
         tokenized_corpus = []
         for text in self.corpus_texts:
             tokens = tokenize_multilingual(text)
             expanded = expand_cross_lingual_tokens(tokens)
-            subwords = generate_subword_ngrams(tokens, min_n=3, max_n=4)
-            tokenized_corpus.append(expanded + subwords)
+            tokenized_corpus.append(expanded)
 
         self.bm25 = bm25s.BM25(k1=settings.BM25_K1, b=settings.BM25_B)
         self.bm25.index(tokenized_corpus, show_progress=False)
@@ -341,21 +340,39 @@ class HybridRetrievalIndex:
         # --- B. Sparse BM25 Retrieval ---
         query_tokens = tokenize_multilingual(norm_query)
         expanded_query_tokens = expand_cross_lingual_tokens(query_tokens)
-        subwords_query = generate_subword_ngrams(query_tokens, min_n=3, max_n=4)
-        search_tokens = [expanded_query_tokens + subwords_query]
+        search_tokens = [expanded_query_tokens]
 
         bm25_docs, bm25_scores = self.bm25.retrieve(
             search_tokens, k=min(num_docs, effective_k), show_progress=False
         )
 
         bm25_rank_map: Dict[int, int] = {}
+        bm25_score_map: Dict[int, float] = {}
         if len(bm25_docs) > 0:
             for rank, doc_idx in enumerate(bm25_docs[0]):
-                bm25_rank_map[int(doc_idx)] = rank
+                idx_int = int(doc_idx)
+                bm25_rank_map[idx_int] = rank
+                if len(bm25_scores) > 0:
+                    bm25_score_map[idx_int] = float(bm25_scores[0][rank])
+
+        # Define stopwords to isolate content tokens
+        stopwords = {
+            "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+            "with", "by", "from", "of", "up", "about", "into", "over", "after",
+            "is", "are", "was", "were", "be", "been", "being", "have", "has",
+            "had", "do", "does", "did", "will", "would", "shall", "should",
+            "can", "could", "may", "might", "must", "i", "you", "he", "she",
+            "it", "we", "they", "me", "him", "her", "us", "them", "my", "your",
+            "his", "their", "our", "what", "which", "who", "whom", "this",
+            "that", "these", "those", "how", "why", "where", "when", "is", "are"
+        }
+        content_query_tokens = [
+            t for t in query_tokens if t not in stopwords and len(t) > 1
+        ]
 
         # --- C. Reciprocal Rank Fusion (RRF) with Multi-Signal Boosting ---
         low_query = norm_query.lower()
-        fused: List[Tuple[float, int]] = []
+        fused: List[Tuple[float, float, int]] = []
 
         for idx in range(num_docs):
             chunk_text = self.chunks[idx].text.lower()
@@ -369,13 +386,14 @@ class HybridRetrievalIndex:
 
             rrf_base = score_dense + score_sparse
 
-            # 1. Exact phrase boost: boost if the full query string appears verbatim
+            # 1. Exact phrase boost
             phrase_boost = 0.0
             if len(low_query) > 3 and low_query in chunk_text:
                 phrase_boost = 0.02
 
-            # 2. Query terms coverage boost: percentage of distinctive query words found in chunk
+            # 2. Query terms coverage boost & content term count
             coverage_boost = 0.0
+            matched_content_count = 0
             if query_tokens:
                 matched_count = sum(
                     1
@@ -386,16 +404,54 @@ class HybridRetrievalIndex:
                 coverage_ratio = matched_count / len(query_tokens)
                 coverage_boost = 0.015 * coverage_ratio
 
+            if content_query_tokens:
+                matched_content_count = sum(
+                    1
+                    for qt in content_query_tokens
+                    if qt in chunk_text
+                    or any(syn in chunk_text for syn in CROSS_LINGUAL_SYNONYM_MAP.get(qt, []))
+                )
+
             total_score = rrf_base + phrase_boost + coverage_boost
-            fused.append((total_score, idx))
+
+            # Compute absolute confidence score
+            sim_dense = max(0.0, float(dense_scores[idx]))
+            bm25_val = bm25_score_map.get(idx, 0.0)
+            sim_bm25 = max(0.0, min(1.0, bm25_val / 5.0))
+
+            if self.is_dense_semantic:
+                abs_confidence = max(sim_dense, sim_bm25 * 0.8)
+            else:
+                # TF-IDF fallback mode: blend TF-IDF similarity with term overlap
+                content_coverage = (
+                    matched_content_count / max(len(content_query_tokens), 1)
+                    if content_query_tokens
+                    else 0.0
+                )
+                abs_confidence = max(sim_dense, sim_bm25 * 0.7, content_coverage * 0.5)
+
+            # Rejection Gate for false positives:
+            # If query has distinct non-stopword content tokens, require either:
+            # - At least 1 matched content token (or cross-lingual synonym), OR
+            # - Dense semantic similarity >= 0.42 (for implicit/conceptual matches in dense mode)
+            if content_query_tokens and matched_content_count == 0:
+                if self.is_dense_semantic:
+                    if sim_dense < 0.42:
+                        continue  # Reject false positive match
+                else:
+                    continue  # Reject false positive in TF-IDF mode
+
+            if abs_confidence < 0.20:
+                continue
+
+            fused.append((total_score, abs_confidence, idx))
 
         fused.sort(key=lambda x: x[0], reverse=True)
-        max_rrf = fused[0][0] if fused else 1.0
 
         matches: List[TranscriptSearchMatch] = []
-        for rrf_score, idx in fused[:top_k]:
+        for rrf_score, abs_conf, idx in fused[:top_k]:
             chunk = self.chunks[idx]
-            norm_score = round(rrf_score / max(max_rrf, 1e-9), 3)
+            norm_score = round(min(1.0, max(0.0, abs_conf)), 3)
 
             matches.append(
                 TranscriptSearchMatch(
