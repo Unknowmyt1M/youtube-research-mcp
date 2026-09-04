@@ -495,7 +495,7 @@ class HybridRetrievalIndex:
         return matches
 
 
-INDEX_VERSION_TAG = "v2026_09_04_v4"
+INDEX_VERSION_TAG = "v2026_09_04_v5"
 
 
 class RetrievalIndexCache:
