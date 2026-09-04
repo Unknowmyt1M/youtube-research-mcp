@@ -37,6 +37,22 @@ class InnerTubeProvider(
     PLAYER_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
 
     CLIENT_CONFIGS = {
+        "ANDROID": {
+            "context": {
+                "client": {
+                    "clientName": "ANDROID",
+                    "clientVersion": "20.10.38",
+                    "hl": "en",
+                    "gl": "US",
+                }
+            },
+            "headers": {
+                "User-Agent": "com.google.android.youtube/20.10.38 (Linux; U; Android 14)",
+                "Content-Type": "application/json",
+                "X-YouTube-Client-Name": "3",
+                "X-YouTube-Client-Version": "20.10.38",
+            },
+        },
         "MWEB": {
             "context": {
                 "client": {
@@ -305,7 +321,7 @@ class InnerTubeProvider(
 
         start_t = time.perf_counter()
         clean_id = extract_video_id(video_id)
-        profiles_to_try = ["MWEB", "ANDROID_TESTSUITE", "WEB", "WEB_EMBEDDED"]
+        profiles_to_try = ["ANDROID", "MWEB", "ANDROID_TESTSUITE", "WEB", "WEB_EMBEDDED"]
 
         try:
             client = await self.get_client()
@@ -467,7 +483,7 @@ class InnerTubeProvider(
 
         start_t = time.perf_counter()
         clean_id = extract_video_id(video_id)
-        profiles_to_try = ["MWEB", "ANDROID_TESTSUITE", "WEB", "WEB_EMBEDDED"]
+        profiles_to_try = ["ANDROID", "MWEB", "ANDROID_TESTSUITE", "WEB", "WEB_EMBEDDED"]
 
         try:
             client = await self.get_client()
