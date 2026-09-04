@@ -448,6 +448,10 @@ class HybridRetrievalIndex:
                 else:
                     continue  # Reject false positive in TF-IDF mode
 
+            if abs_confidence < 0.1:
+                continue  # Reject absolute low confidence noise
+
+
             min_threshold = 0.25
             if abs_confidence < min_threshold:
                 continue
