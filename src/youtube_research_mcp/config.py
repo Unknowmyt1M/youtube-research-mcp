@@ -95,9 +95,9 @@ class Settings(BaseSettings):
     # Optional Commercial Keys (Isolated Fallback Tiers)
     SUPADATA_API_KEY: Optional[str] = "sd_2191e0cbd92bb0672e98859bc3c66207"
     SUPADATA_API_KEY_SECONDARY: Optional[str] = "sd_b2b9f3cc951ed5dc06b21ad3c0120cb3"
-    SUPADATA_API_KEY_TERTIARY: Optional[str] = None
-    SUPADATA_API_KEY_QUATERNARY: Optional[str] = None
-    SUPADATA_API_KEY_QUINARY: Optional[str] = None
+    SUPADATA_API_KEY_TERTIARY: Optional[str] = "sd_d909688ab3010c8d7d6469e7dc06cd42"
+    SUPADATA_API_KEY_QUATERNARY: Optional[str] = "sd_accb359fc08a53cae5be3cddd5145287"
+    SUPADATA_API_KEY_QUINARY: Optional[str] = "sd_510a5deadcc52c1e77622e4a8f5b38f1"
     SUPADATA_MAX_DAILY_REQUESTS: Optional[int] = None
     SEARCHAPI_API_KEY: Optional[str] = None
     TRANSCRIPT_API_KEY: Optional[str] = None
