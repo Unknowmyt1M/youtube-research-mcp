@@ -443,7 +443,7 @@ class HybridRetrievalIndex:
             # Require high semantic dense similarity >= 0.68 for true conceptual matches (since bge baseline for unrelated English is ~0.45).
             if content_query_tokens and matched_content_count == 0:
                 if self.is_dense_semantic:
-                    if sim_dense < 0.68:
+                    if sim_dense < 0.58:
                         continue  # Reject false positive match
                 else:
                     continue  # Reject false positive in TF-IDF mode
@@ -503,7 +503,7 @@ class HybridRetrievalIndex:
         return matches
 
 
-INDEX_VERSION_TAG = "v2026_09_05_v1"
+INDEX_VERSION_TAG = "v2026_09_05_v2"
 
 
 class RetrievalIndexCache:
