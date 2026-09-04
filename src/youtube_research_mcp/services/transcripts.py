@@ -45,7 +45,7 @@ class TranscriptService:
         clean_fb = validate_language_code(fallback_language, default=None, allow_none=True)
         clean_trans = validate_language_code(translate_to, default=None, allow_none=True)
 
-        cache_key = f"transcript:{clean_id}:{clean_lang}:{clean_fb}:{clean_trans}"
+        cache_key = f"transcript:v4:{clean_id}:{clean_lang}:{clean_fb}:{clean_trans}"
 
         # 1. Check cache
         cached, is_neg = await self.cache.get_with_status(cache_key)

@@ -83,12 +83,12 @@ async def test_transcript_service_cache_isolation():
     # Untranslated request
     await service.get_transcript("dQw4w9WgXcQ", language="en", fallback_language="en", translate_to=None)
     untrans_key = mock_cache.get_with_status.call_args[0][0]
-    assert "transcript:dQw4w9WgXcQ:en:en:None" == untrans_key
+    assert "transcript:v4:dQw4w9WgXcQ:en:en:None" == untrans_key
 
     # Translated request
     await service.get_transcript("dQw4w9WgXcQ", language="en", fallback_language="en", translate_to="es")
     trans_key = mock_cache.get_with_status.call_args[0][0]
-    assert "transcript:dQw4w9WgXcQ:en:en:es" == trans_key
+    assert "transcript:v4:dQw4w9WgXcQ:en:en:es" == trans_key
 
     # Ensure keys are distinct
     assert untrans_key != trans_key
