@@ -215,7 +215,8 @@ class MultilingualSubwordTfidf:
     def _extract_features(self, text: str) -> List[str]:
         tokens = tokenize_multilingual(text)
         expanded_tokens = expand_cross_lingual_tokens(tokens)
-        return expanded_tokens
+        stopwords = {"a", "an", "the", "in", "on", "at", "to", "for", "of", "is", "are"}
+        return [t for t in expanded_tokens if t not in stopwords and len(t) > 1]
 
     def fit_transform(self, docs: List[str]) -> np.ndarray:
         doc_features = [self._extract_features(doc) for doc in docs]
@@ -444,7 +445,7 @@ class HybridRetrievalIndex:
                 else:
                     continue  # Reject false positive in TF-IDF mode
 
-            min_threshold = 0.25 if self.is_dense_semantic else 0.22
+            min_threshold = 0.25
             if abs_confidence < min_threshold:
                 continue
 
