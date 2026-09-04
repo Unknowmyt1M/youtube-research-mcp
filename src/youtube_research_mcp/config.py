@@ -94,10 +94,23 @@ class Settings(BaseSettings):
 
     # Optional Commercial Keys (Isolated Fallback Tiers)
     SUPADATA_API_KEY: Optional[str] = None
+    SUPADATA_API_KEY_SECONDARY: Optional[str] = None
+    SUPADATA_API_KEY_TERTIARY: Optional[str] = None
     SUPADATA_MAX_DAILY_REQUESTS: Optional[int] = None
     SEARCHAPI_API_KEY: Optional[str] = None
     TRANSCRIPT_API_KEY: Optional[str] = None
     YOUTUBE_DATA_API_KEY: Optional[str] = None
+
+    @property
+    def supadata_api_keys(self) -> List[str]:
+        """Returns list of unique active Supadata API keys in priority order."""
+        keys = []
+        for k in [self.SUPADATA_API_KEY, self.SUPADATA_API_KEY_SECONDARY, self.SUPADATA_API_KEY_TERTIARY]:
+            if k and isinstance(k, str):
+                cleaned = k.strip()
+                if cleaned and cleaned not in keys:
+                    keys.append(cleaned)
+        return keys
 
     # HTTP & Connection Pooling / Proxy Tiers
     YOUTUBE_PROXY_ENABLED: bool = False

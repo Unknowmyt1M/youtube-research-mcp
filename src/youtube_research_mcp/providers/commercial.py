@@ -48,7 +48,8 @@ class CommercialProvider(BaseTranscriptProvider):
         fallback_language: Optional[str] = None,
         translate_to: Optional[str] = None,
     ) -> Optional[TranscriptResult]:
-        if not settings.SUPADATA_API_KEY and not settings.TRANSCRIPT_API_KEY:
+        supadata_keys = settings.supadata_api_keys
+        if not supadata_keys and not settings.TRANSCRIPT_API_KEY:
             return None
 
         if not self._health.can_execute(ProviderCapability.TRANSCRIPT):
@@ -59,9 +60,9 @@ class CommercialProvider(BaseTranscriptProvider):
 
         try:
             client = await self.get_client()
-            if settings.SUPADATA_API_KEY:
-                headers = {"x-api-key": settings.SUPADATA_API_KEY}
-                
+            for key in supadata_keys:
+                headers = {"x-api-key": key}
+
                 # Try primary language first
                 query_url = f"https://api.supadata.ai/v1/youtube/transcript?videoId={clean_id}&lang={language}&text=false"
                 if translate_to:
@@ -72,15 +73,30 @@ class CommercialProvider(BaseTranscriptProvider):
                 fallback_used = False
 
                 # If primary language failed and fallback is specified, try fallback
-                if res.status_code != 200 and fallback_language and fallback_language != language:
+                if (
+                    res.status_code not in (200, 401, 402, 403, 429)
+                    and fallback_language
+                    and fallback_language != language
+                ):
                     fb_url = f"https://api.supadata.ai/v1/youtube/transcript?videoId={clean_id}&lang={fallback_language}&text=false"
                     if translate_to:
                         fb_url += f"&translate={translate_to}"
                     res_fb = await client.get(fb_url, headers=headers)
                     if res_fb.status_code == 200:
                         res = res_fb
-                        actual_lang = translate_to if translate_to else fallback_language
+                        actual_lang = (
+                            translate_to if translate_to else fallback_language
+                        )
                         fallback_used = True
+
+                # Failover to next key if key is unauthorized, out of credits, or rate-limited
+                if res.status_code in (401, 402, 403, 429):
+                    import logging
+
+                    logging.getLogger(__name__).warning(
+                        f"Supadata API key ('...{key[-8:]}') returned HTTP {res.status_code}. Attempting next available key."
+                    )
+                    continue
 
                 if res.status_code == 200:
                     data = res.json()
@@ -91,8 +107,16 @@ class CommercialProvider(BaseTranscriptProvider):
                         raw_offset = item.get("offset", 0.0)
                         raw_dur = item.get("duration", 0.0)
                         # Supadata provides offset and duration in milliseconds
-                        s_sec = float(raw_offset) / 1000.0 if raw_offset is not None else 0.0
-                        dur = float(raw_dur) / 1000.0 if raw_dur is not None else 0.0
+                        s_sec = (
+                            float(raw_offset) / 1000.0
+                            if raw_offset is not None
+                            else 0.0
+                        )
+                        dur = (
+                            float(raw_dur) / 1000.0
+                            if raw_dur is not None
+                            else 0.0
+                        )
                         segments.append(
                             TranscriptSegment(
                                 start=s_sec,
@@ -110,7 +134,9 @@ class CommercialProvider(BaseTranscriptProvider):
                         full_text = " ".join(s.text for s in segments)
                         dur_total = segments[-1].end if segments else 0.0
                         latency_ms = (time.perf_counter() - start_t) * 1000.0
-                        self._health.record_success(ProviderCapability.TRANSCRIPT, latency_ms)
+                        self._health.record_success(
+                            ProviderCapability.TRANSCRIPT, latency_ms
+                        )
 
                         return TranscriptResult(
                             video_id=clean_id,
@@ -118,7 +144,9 @@ class CommercialProvider(BaseTranscriptProvider):
                             requested_language=language,
                             actual_language=actual_lang,
                             fallback_used=fallback_used,
-                            fallback_language=fallback_language if fallback_used else None,
+                            fallback_language=fallback_language
+                            if fallback_used
+                            else None,
                             is_generated=False,
                             is_translated=bool(translate_to),
                             total_segments=len(segments),

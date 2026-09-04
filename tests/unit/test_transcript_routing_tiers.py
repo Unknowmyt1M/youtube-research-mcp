@@ -206,3 +206,37 @@ async def test_h_supadata_daily_quota_limit():
             assert r3 is None
             assert router.supadata_daily_calls == 2
             assert mock_comm.call_count == 2
+
+@pytest.mark.asyncio
+async def test_supadata_multi_key_failover():
+    """Test multi-key failover when Key 1 returns 429/402 and Key 2 or Key 3 succeeds."""
+    from youtube_research_mcp.providers.commercial import CommercialProvider
+    import httpx
+
+    with patch.object(settings, "SUPADATA_API_KEY", "key_1_exhausted"), \
+         patch.object(settings, "SUPADATA_API_KEY_SECONDARY", "sd_d909688ab3010c8d7d6469e7dc06cd42"), \
+         patch.object(settings, "SUPADATA_API_KEY_TERTIARY", "sd_510a5deadcc52c1e77622e4a8f5b38f1"):
+
+        provider = CommercialProvider()
+        mock_client = AsyncMock()
+
+        async def mock_get(url, headers=None):
+            api_key = headers.get("x-api-key") if headers else None
+            if api_key == "key_1_exhausted":
+                return httpx.Response(429, json={"message": "Quota exceeded"})
+            elif api_key == "sd_d909688ab3010c8d7d6469e7dc06cd42":
+                return httpx.Response(200, json={
+                    "lang": "en",
+                    "content": [{"offset": 0, "duration": 5000, "text": "Failover success"}]
+                })
+            return httpx.Response(400)
+
+        mock_client.get.side_effect = mock_get
+
+        with patch.object(provider, "get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            res = await provider.get_transcript(video_id="dQw4w9WgXcQ", language="en")
+            assert res is not None
+            assert res.provider == "supadata"
+            assert res.full_text == "Failover success"
+            assert mock_client.get.call_count == 2
