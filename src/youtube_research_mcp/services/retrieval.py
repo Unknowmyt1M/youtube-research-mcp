@@ -215,8 +215,7 @@ class MultilingualSubwordTfidf:
     def _extract_features(self, text: str) -> List[str]:
         tokens = tokenize_multilingual(text)
         expanded_tokens = expand_cross_lingual_tokens(tokens)
-        subwords = generate_subword_ngrams(expanded_tokens, min_n=3, max_n=4)
-        return expanded_tokens + subwords
+        return expanded_tokens
 
     def fit_transform(self, docs: List[str]) -> np.ndarray:
         doc_features = [self._extract_features(doc) for doc in docs]
@@ -377,7 +376,10 @@ class HybridRetrievalIndex:
         fused: List[Tuple[float, float, int]] = []
 
         for idx in range(num_docs):
-            chunk_text = self.chunks[idx].text.lower()
+            chunk_raw = self.chunks[idx].text
+            chunk_text = chunk_raw.lower()
+            chunk_tokens = set(tokenize_multilingual(chunk_raw))
+
             r_dense = dense_rank_map.get(idx, 9999)
             r_sparse = bm25_rank_map.get(idx, 9999)
 
@@ -400,8 +402,8 @@ class HybridRetrievalIndex:
                 matched_count = sum(
                     1
                     for qt in query_tokens
-                    if qt in chunk_text
-                    or any(syn in chunk_text for syn in CROSS_LINGUAL_SYNONYM_MAP.get(qt, []))
+                    if qt in chunk_tokens
+                    or any(syn in chunk_tokens for syn in CROSS_LINGUAL_SYNONYM_MAP.get(qt, []))
                 )
                 coverage_ratio = matched_count / len(query_tokens)
                 coverage_boost = 0.015 * coverage_ratio
@@ -410,8 +412,8 @@ class HybridRetrievalIndex:
                 matched_content_count = sum(
                     1
                     for qt in content_query_tokens
-                    if qt in chunk_text
-                    or any(syn in chunk_text for syn in CROSS_LINGUAL_SYNONYM_MAP.get(qt, []))
+                    if qt in chunk_tokens
+                    or any(syn in chunk_tokens for syn in CROSS_LINGUAL_SYNONYM_MAP.get(qt, []))
                 )
 
             total_score = rrf_base + phrase_boost + coverage_boost
@@ -461,12 +463,12 @@ class HybridRetrievalIndex:
             c_end = chunk.end_seconds
 
             # Temporal Overlap Suppression (MMR-like IoU deduplication)
-            # Skip chunk if it heavily overlaps (>35% IoU) with an already selected higher-scoring chunk
+            # Skip chunk if it heavily overlaps (>20% IoU) with an already selected higher-scoring chunk
             is_redundant = False
             for s_start, s_end in selected_ranges:
                 overlap = max(0.0, min(c_end, s_end) - max(c_start, s_start))
                 duration = max(1.0, min(c_end - c_start, s_end - s_start))
-                if (overlap / duration) > 0.35:
+                if (overlap / duration) > 0.20:
                     is_redundant = True
                     break
 
