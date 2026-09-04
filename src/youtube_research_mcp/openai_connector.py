@@ -266,6 +266,7 @@ def register_openai_connector_routes(mcp):
                 "status": "healthy",
                 "service": settings.PRODUCT_NAME,
                 "legacy_name": settings.MCP_SERVER_NAME,
+                "version": "baa7872_v5",
             },
             headers=cors,
         )
