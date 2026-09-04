@@ -100,7 +100,15 @@ class CommercialProvider(BaseTranscriptProvider):
 
                 if res.status_code == 200:
                     data = res.json()
-                    actual_lang = translate_to or data.get("lang") or actual_lang
+                    returned_lang = data.get("lang")
+                    if translate_to:
+                        actual_lang = translate_to
+                    elif fallback_used:
+                        actual_lang = fallback_language
+                    elif returned_lang:
+                        actual_lang = returned_lang
+                        if language and returned_lang != language and fallback_language and returned_lang == fallback_language:
+                            fallback_used = True
                     content = data.get("content", [])
                     segments = []
                     for item in content:
