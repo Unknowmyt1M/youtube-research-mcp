@@ -97,6 +97,7 @@ class Settings(BaseSettings):
     SUPADATA_API_KEY_SECONDARY: Optional[str] = None
     SUPADATA_API_KEY_TERTIARY: Optional[str] = None
     SUPADATA_API_KEY_QUATERNARY: Optional[str] = None
+    SUPADATA_API_KEY_QUINARY: Optional[str] = None
     SUPADATA_MAX_DAILY_REQUESTS: Optional[int] = None
     SEARCHAPI_API_KEY: Optional[str] = None
     TRANSCRIPT_API_KEY: Optional[str] = None
@@ -111,6 +112,7 @@ class Settings(BaseSettings):
             self.SUPADATA_API_KEY_SECONDARY,
             self.SUPADATA_API_KEY_TERTIARY,
             self.SUPADATA_API_KEY_QUATERNARY,
+            self.SUPADATA_API_KEY_QUINARY,
         ]
         for k in raw_candidates:
             if k and isinstance(k, str):
