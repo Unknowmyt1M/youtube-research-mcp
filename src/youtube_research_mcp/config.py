@@ -93,8 +93,8 @@ class Settings(BaseSettings):
     DEFAULT_FALLBACK_LANGUAGE: Optional[str] = "en"
 
     # Optional Commercial Keys (Isolated Fallback Tiers)
-    SUPADATA_API_KEY: Optional[str] = None
-    SUPADATA_API_KEY_SECONDARY: Optional[str] = None
+    SUPADATA_API_KEY: Optional[str] = "sd_2191e0cbd92bb0672e98859bc3c66207"
+    SUPADATA_API_KEY_SECONDARY: Optional[str] = "sd_b2b9f3cc951ed5dc06b21ad3c0120cb3"
     SUPADATA_API_KEY_TERTIARY: Optional[str] = None
     SUPADATA_API_KEY_QUATERNARY: Optional[str] = None
     SUPADATA_API_KEY_QUINARY: Optional[str] = None
