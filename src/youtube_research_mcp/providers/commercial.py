@@ -66,7 +66,7 @@ class CommercialProvider(BaseTranscriptProvider):
                 # Try primary language first
                 query_url = f"https://api.supadata.ai/v1/youtube/transcript?videoId={clean_id}&lang={language}&text=false"
                 if translate_to:
-                    query_url += f"&translate={translate_to}"
+                    query_url += f"&translateTo={translate_to}"
 
                 res = await client.get(query_url, headers=headers)
                 actual_lang = translate_to if translate_to else language
@@ -80,7 +80,7 @@ class CommercialProvider(BaseTranscriptProvider):
                 ):
                     fb_url = f"https://api.supadata.ai/v1/youtube/transcript?videoId={clean_id}&lang={fallback_language}&text=false"
                     if translate_to:
-                        fb_url += f"&translate={translate_to}"
+                        fb_url += f"&translateTo={translate_to}"
                     res_fb = await client.get(fb_url, headers=headers)
                     if res_fb.status_code == 200:
                         res = res_fb
@@ -109,6 +109,8 @@ class CommercialProvider(BaseTranscriptProvider):
                         actual_lang = returned_lang
                         if language and returned_lang != language:
                             fallback_used = True
+                            if not fallback_language:
+                                fallback_language = returned_lang
                     content = data.get("content", [])
                     segments = []
                     for item in content:
@@ -140,6 +142,14 @@ class CommercialProvider(BaseTranscriptProvider):
 
                     if segments:
                         full_text = " ".join(s.text for s in segments)
+                        if translate_to:
+                            from youtube_research_mcp.utils.validation import validate_translation_content
+                            if not validate_translation_content(full_text, translate_to):
+                                import logging
+                                logging.getLogger(__name__).warning(
+                                    f"Supadata translation to '{translate_to}' returned untranslated content for {clean_id}. Failing provider."
+                                )
+                                continue
                         dur_total = segments[-1].end if segments else 0.0
                         latency_ms = (time.perf_counter() - start_t) * 1000.0
                         self._health.record_success(
