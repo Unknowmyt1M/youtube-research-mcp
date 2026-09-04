@@ -214,8 +214,8 @@ async def test_supadata_multi_key_failover():
     import httpx
 
     with patch.object(settings, "SUPADATA_API_KEY", "key_1_exhausted"), \
-         patch.object(settings, "SUPADATA_API_KEY_SECONDARY", "sd_d909688ab3010c8d7d6469e7dc06cd42"), \
-         patch.object(settings, "SUPADATA_API_KEY_TERTIARY", "sd_510a5deadcc52c1e77622e4a8f5b38f1"):
+         patch.object(settings, "SUPADATA_API_KEY_SECONDARY", "mock_key_2_valid"), \
+         patch.object(settings, "SUPADATA_API_KEY_TERTIARY", "mock_key_3_valid"):
 
         provider = CommercialProvider()
         mock_client = AsyncMock()
@@ -224,7 +224,7 @@ async def test_supadata_multi_key_failover():
             api_key = headers.get("x-api-key") if headers else None
             if api_key == "key_1_exhausted":
                 return httpx.Response(429, json={"message": "Quota exceeded"})
-            elif api_key == "sd_d909688ab3010c8d7d6469e7dc06cd42":
+            elif api_key == "mock_key_2_valid":
                 return httpx.Response(200, json={
                     "lang": "en",
                     "content": [{"offset": 0, "duration": 5000, "text": "Failover success"}]
