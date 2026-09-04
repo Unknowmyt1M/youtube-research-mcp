@@ -335,6 +335,7 @@ class HybridRetrievalIndex:
         dense_ranked_indices = np.argsort(-dense_scores)
         dense_rank_map = {
             int(idx): rank for rank, idx in enumerate(dense_ranked_indices)
+            if dense_scores[idx] > 0.0
         }
 
         # --- B. Sparse BM25 Retrieval ---
@@ -384,7 +385,9 @@ class HybridRetrievalIndex:
             r_dense = dense_rank_map.get(idx, 9999)
             r_sparse = bm25_rank_map.get(idx, 9999)
 
-            score_dense = 1.0 / (k_rrf + r_dense)
+            score_dense = (
+                1.0 / (k_rrf + r_dense) if idx in dense_rank_map else 0.0
+            )
             score_sparse = (
                 1.0 / (k_rrf + r_sparse) if idx in bm25_rank_map else 0.0
             )
@@ -496,7 +499,7 @@ class HybridRetrievalIndex:
         return matches
 
 
-INDEX_VERSION_TAG = "v2026_09_04_v5"
+INDEX_VERSION_TAG = "v2026_09_05_v1"
 
 
 class RetrievalIndexCache:
