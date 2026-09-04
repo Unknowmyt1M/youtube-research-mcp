@@ -47,9 +47,12 @@ class TranscriptChunker:
             current_chunk_segments.append(seg)
             current_word_count += seg_words
 
-            # Check if target word count reached AND is near a sentence/clause end
+            # Check if target word count reached AND is near a sentence/clause end, or max safety limit reached
             is_sentence_boundary = bool(self.sentence_end.search(seg.text))
-            if current_word_count >= self.target_words and is_sentence_boundary:
+            max_safety_words = int(self.target_words * 1.5)
+            if (current_word_count >= self.target_words and is_sentence_boundary) or (
+                current_word_count >= max_safety_words
+            ):
                 chunk = self._create_chunk(
                     video_id, chunk_idx, current_chunk_segments, chapters
                 )

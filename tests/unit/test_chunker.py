@@ -53,3 +53,29 @@ def test_chunker_merges_segments_and_preserves_timestamps():
     assert "artificial intelligence" in first_chunk.text
     assert first_chunk.chapter_title == "Introduction to LLMs"
     assert "https://youtu.be/test1234567?t=" in first_chunk.url
+
+
+def test_chunker_handles_punctuation_free_auto_generated_captions():
+    chunker = TranscriptChunker(target_words=20, overlap_words=5)
+    # Target safety threshold will be int(20 * 1.5) = 30 words.
+    # We pass 50 unpunctuated words across 5 segments (10 words each).
+    segments = []
+    for i in range(5):
+        segments.append(
+            TranscriptSegment(
+                start=float(i * 5),
+                duration=5.0,
+                end=float((i + 1) * 5),
+                text=f"unpunctuated segment number {i+1} with extra words to exceed safety threshold",
+                timestamp_formatted=f"00:0{i*5}",
+                url=f"https://youtu.be/testasr1234?t={i*5}",
+            )
+        )
+
+    chunks = chunker.chunk_transcript("testasr1234", segments)
+
+    # Should break into multiple chunks despite having zero punctuation (',', '.', '!', '?')
+    assert len(chunks) > 1
+    for chunk in chunks:
+        assert len(chunk.text.split()) <= 40
+

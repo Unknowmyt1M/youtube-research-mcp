@@ -136,12 +136,7 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
             if translate_to:
                 for t in all_transcripts:
                     if t not in [c[0] for c in candidates] and t.is_translatable:
-                        candidates.append((t, fb_code is not None))
-
-            # 4. If fallback_language is provided and no candidates matched, try all remaining tracks
-            if fallback_language and not candidates:
-                for t in all_transcripts:
-                    candidates.append((t, True))
+                        candidates.append((t, False))
 
             # Deduplicate preserving order
             unique_candidates = []
