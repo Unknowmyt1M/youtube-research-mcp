@@ -495,6 +495,9 @@ class HybridRetrievalIndex:
         return matches
 
 
+INDEX_VERSION_TAG = "v2026_09_04_v4"
+
+
 class RetrievalIndexCache:
     """Bounded in-memory LRU cache with TTL and concurrent per-key locking for retrieval indexes."""
 
@@ -510,21 +513,23 @@ class RetrievalIndexCache:
         self._global_lock = asyncio.Lock()
 
     def get(self, video_id: str) -> Optional[HybridRetrievalIndex]:
+        key = f"{video_id}:{INDEX_VERSION_TAG}"
         now = time.time()
-        if video_id in self._cache:
-            index, created_at = self._cache[video_id]
+        if key in self._cache:
+            index, created_at = self._cache[key]
             if now - created_at <= self.ttl_seconds:
-                self._cache.move_to_end(video_id)
+                self._cache.move_to_end(key)
                 return index
             else:
-                del self._cache[video_id]
+                del self._cache[key]
         return None
 
     def put(self, video_id: str, index: HybridRetrievalIndex):
+        key = f"{video_id}:{INDEX_VERSION_TAG}"
         now = time.time()
-        if video_id in self._cache:
-            self._cache.move_to_end(video_id)
-        self._cache[video_id] = (index, now)
+        if key in self._cache:
+            self._cache.move_to_end(key)
+        self._cache[key] = (index, now)
 
         if len(self._cache) > self.max_size:
             self._cache.popitem(last=False)  # Evict oldest
