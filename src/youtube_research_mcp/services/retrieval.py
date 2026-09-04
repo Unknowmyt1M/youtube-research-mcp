@@ -369,6 +369,8 @@ class HybridRetrievalIndex:
         content_query_tokens = [
             t for t in query_tokens if t not in stopwords and len(t) > 1
         ]
+        if not content_query_tokens:
+            return []
 
         # --- C. Reciprocal Rank Fusion (RRF) with Multi-Signal Boosting ---
         low_query = norm_query.lower()
@@ -431,17 +433,17 @@ class HybridRetrievalIndex:
                 abs_confidence = max(sim_dense, sim_bm25 * 0.7, content_coverage * 0.5)
 
             # Rejection Gate for false positives:
-            # If query has distinct non-stopword content tokens, require either:
-            # - At least 1 matched content token (or cross-lingual synonym), OR
-            # - Dense semantic similarity >= 0.42 (for implicit/conceptual matches in dense mode)
+            # If query has distinct non-stopword content tokens and ZERO of them matched (lexically or via cross-lingual synonyms):
+            # Require high semantic dense similarity >= 0.68 for true conceptual matches (since bge baseline for unrelated English is ~0.45).
             if content_query_tokens and matched_content_count == 0:
                 if self.is_dense_semantic:
-                    if sim_dense < 0.42:
+                    if sim_dense < 0.68:
                         continue  # Reject false positive match
                 else:
                     continue  # Reject false positive in TF-IDF mode
 
-            if abs_confidence < 0.20:
+            min_threshold = 0.25 if self.is_dense_semantic else 0.22
+            if abs_confidence < min_threshold:
                 continue
 
             fused.append((total_score, abs_confidence, idx))
@@ -449,8 +451,29 @@ class HybridRetrievalIndex:
         fused.sort(key=lambda x: x[0], reverse=True)
 
         matches: List[TranscriptSearchMatch] = []
-        for rrf_score, abs_conf, idx in fused[:top_k]:
+        selected_ranges: List[Tuple[float, float]] = []
+
+        for rrf_score, abs_conf, idx in fused:
+            if len(matches) >= top_k:
+                break
             chunk = self.chunks[idx]
+            c_start = chunk.start_seconds
+            c_end = chunk.end_seconds
+
+            # Temporal Overlap Suppression (MMR-like IoU deduplication)
+            # Skip chunk if it heavily overlaps (>35% IoU) with an already selected higher-scoring chunk
+            is_redundant = False
+            for s_start, s_end in selected_ranges:
+                overlap = max(0.0, min(c_end, s_end) - max(c_start, s_start))
+                duration = max(1.0, min(c_end - c_start, s_end - s_start))
+                if (overlap / duration) > 0.35:
+                    is_redundant = True
+                    break
+
+            if is_redundant and len(fused) > 1:
+                continue
+
+            selected_ranges.append((c_start, c_end))
             norm_score = round(min(1.0, max(0.0, abs_conf)), 3)
 
             matches.append(

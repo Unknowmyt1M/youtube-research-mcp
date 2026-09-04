@@ -95,3 +95,40 @@ def validate_max_results(
             f"max_results must be between {min_val} and {max_val} (received {num})."
         )
     return num
+
+
+def validate_translation_content(text: str, target_lang: str) -> bool:
+    """Verify that transcript text actually contains the target language script / characters."""
+    if not text or not text.strip():
+        return False
+
+    base_target = target_lang.lower().split("-")[0]
+    
+    # Devanagari (Hindi)
+    if base_target in ("hi", "mr", "ne"):
+        devanagari_count = len(re.findall(r"[\u0900-\u097F]", text))
+        return devanagari_count > 0
+
+    # CJK (Chinese, Japanese)
+    if base_target in ("zh", "ja"):
+        cjk_count = len(re.findall(r"[\u4e00-\u9fff\u3040-\u30ff]", text))
+        return cjk_count > 0
+
+    # Korean Hangul
+    if base_target == "ko":
+        hangul_count = len(re.findall(r"[\uac00-\ud7af\u1100-\u11ff]", text))
+        return hangul_count > 0
+
+    # Arabic / Persian / Urdu
+    if base_target in ("ar", "fa", "ur"):
+        arabic_count = len(re.findall(r"[\u0600-\u06FF]", text))
+        return arabic_count > 0
+
+    # Cyrillic (Russian, Ukrainian)
+    if base_target in ("ru", "uk", "bg"):
+        cyrillic_count = len(re.findall(r"[\u0400-\u04FF]", text))
+        return cyrillic_count > 0
+
+    # Default for Latin scripts: ensure non-empty text
+    return len(text.strip()) > 0
+

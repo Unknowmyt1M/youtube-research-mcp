@@ -295,6 +295,17 @@ class YtDlpProvider(
                 segments = self._parse_json3(data, clean_id)
                 if segments:
                     full_text = " ".join(s.text for s in segments)
+
+                    if translate_to:
+                        from youtube_research_mcp.utils.validation import validate_translation_content
+                        if not validate_translation_content(full_text, translate_to):
+                            logger.warning(f"yt-dlp translation to '{translate_to}' failed script validation.")
+                            self._health.record_failure(
+                                ProviderCapability.TRANSCRIPT,
+                                f"Translation to '{translate_to}' failed content script validation.",
+                            )
+                            return None
+
                     dur = segments[-1].end if segments else 0.0
                     latency_ms = (time.perf_counter() - start_t) * 1000.0
                     self._health.record_success(ProviderCapability.TRANSCRIPT, latency_ms)
