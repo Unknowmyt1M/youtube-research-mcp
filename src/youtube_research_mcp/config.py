@@ -96,6 +96,7 @@ class Settings(BaseSettings):
     SUPADATA_API_KEY: Optional[str] = None
     SUPADATA_API_KEY_SECONDARY: Optional[str] = None
     SUPADATA_API_KEY_TERTIARY: Optional[str] = None
+    SUPADATA_API_KEY_QUATERNARY: Optional[str] = None
     SUPADATA_MAX_DAILY_REQUESTS: Optional[int] = None
     SEARCHAPI_API_KEY: Optional[str] = None
     TRANSCRIPT_API_KEY: Optional[str] = None
@@ -105,11 +106,19 @@ class Settings(BaseSettings):
     def supadata_api_keys(self) -> List[str]:
         """Returns list of unique active Supadata API keys in priority order."""
         keys = []
-        for k in [self.SUPADATA_API_KEY, self.SUPADATA_API_KEY_SECONDARY, self.SUPADATA_API_KEY_TERTIARY]:
+        raw_candidates = [
+            self.SUPADATA_API_KEY,
+            self.SUPADATA_API_KEY_SECONDARY,
+            self.SUPADATA_API_KEY_TERTIARY,
+            self.SUPADATA_API_KEY_QUATERNARY,
+        ]
+        for k in raw_candidates:
             if k and isinstance(k, str):
-                cleaned = k.strip()
-                if cleaned and cleaned not in keys:
-                    keys.append(cleaned)
+                # Support comma-separated strings if multiple keys are passed in one env var
+                parts = [p.strip() for p in k.split(",") if p.strip()]
+                for part in parts:
+                    if part not in keys:
+                        keys.append(part)
         return keys
 
     # HTTP & Connection Pooling / Proxy Tiers
