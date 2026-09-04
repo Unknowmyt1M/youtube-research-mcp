@@ -554,6 +554,7 @@ class InnerTubeProvider(
                 )
                 if matched_track:
                     fallback_used = True
+                    fallback_language = matched_track.get("languageCode", fallback_language)
 
             if not matched_track:
                 # Requested language not available and no fallback matched

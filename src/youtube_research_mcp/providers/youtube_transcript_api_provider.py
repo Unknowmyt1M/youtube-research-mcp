@@ -168,6 +168,9 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
                 try:
                     fetched = target_t.fetch()
                     if fetched:
+                        nonlocal fallback_language
+                        if is_fb:
+                            fallback_language = cand_t.language_code
                         return target_t, fetched, is_fb, is_trans
                 except Exception as fetch_e:
                     last_error = fetch_e
