@@ -111,6 +111,9 @@ class CommercialProvider(BaseTranscriptProvider):
                             fallback_used = True
                             fallback_language = returned_lang
 
+                    if not fallback_used and fallback_language and language and fallback_language != language and returned_lang == fallback_language:
+                        fallback_used = True
+
                     if fallback_used and not fallback_language:
                         fallback_language = actual_lang
 
