@@ -107,7 +107,7 @@ class CommercialProvider(BaseTranscriptProvider):
                         actual_lang = fallback_language
                     elif returned_lang:
                         actual_lang = returned_lang
-                        if language and returned_lang != language and fallback_language and returned_lang == fallback_language:
+                        if language and returned_lang != language:
                             fallback_used = True
                     content = data.get("content", [])
                     segments = []
