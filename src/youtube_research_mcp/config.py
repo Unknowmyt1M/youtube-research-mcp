@@ -94,6 +94,7 @@ class Settings(BaseSettings):
 
     # Optional Commercial Keys (Isolated Fallback Tiers)
     SUPADATA_API_KEY: Optional[str] = None
+    SUPADATA_API_KEYS: Optional[str] = None
     SUPADATA_API_KEY_SECONDARY: Optional[str] = None
     SUPADATA_API_KEY_TERTIARY: Optional[str] = None
     SUPADATA_API_KEY_QUATERNARY: Optional[str] = None
@@ -109,6 +110,7 @@ class Settings(BaseSettings):
         keys = []
         raw_candidates = [
             self.SUPADATA_API_KEY,
+            self.SUPADATA_API_KEYS,
             self.SUPADATA_API_KEY_SECONDARY,
             self.SUPADATA_API_KEY_TERTIARY,
             self.SUPADATA_API_KEY_QUATERNARY,
@@ -116,8 +118,8 @@ class Settings(BaseSettings):
         ]
         for k in raw_candidates:
             if k and isinstance(k, str):
-                # Support comma-separated strings if multiple keys are passed in one env var
-                parts = [p.strip() for p in k.split(",") if p.strip()]
+                # Support comma or newline separated strings if multiple keys are passed
+                parts = [p.strip() for p in k.replace("\n", ",").split(",") if p.strip()]
                 for part in parts:
                     if part not in keys:
                         keys.append(part)

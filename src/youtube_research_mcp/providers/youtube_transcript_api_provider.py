@@ -168,20 +168,20 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
                 try:
                     fetched = target_t.fetch()
                     if fetched:
-                        nonlocal fallback_language
-                        if is_fb:
-                            fallback_language = cand_t.language_code
-                        return target_t, fetched, is_fb, is_trans
+                        actual_fb = cand_t.language_code if is_fb else None
+                        return target_t, fetched, is_fb, is_trans, actual_fb
                 except Exception as fetch_e:
                     last_error = fetch_e
                     logger.debug(f"Failed to fetch candidate transcript {target_t.language_code}: {fetch_e}")
 
             if last_error:
                 raise last_error
-            return None, None, False, False
+            return None, None, False, False, None
 
         try:
-            matched_tr, fetched_data, fallback_used, is_translated = await asyncio.to_thread(_fetch_sync)
+            matched_tr, fetched_data, fallback_used, is_translated, matched_fb_lang = await asyncio.to_thread(_fetch_sync)
+            if fallback_used and matched_fb_lang:
+                fallback_language = matched_fb_lang
             
             if not matched_tr or not fetched_data:
                 self._health.record_failure(
