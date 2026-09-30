@@ -151,8 +151,19 @@ class InnerTubeProvider(
     def health(self) -> CapabilityProviderHealth:
         return self._health
 
-    async def get_client(self) -> httpx.AsyncClient:
-        """Get or initialize the shared long-lived connection pool."""
+    async def get_client(self, proxy_override: Optional[str] = None) -> httpx.AsyncClient:
+        """Get or initialize the shared long-lived connection pool, optionally using dynamic proxy."""
+        if proxy_override:
+            # Ephemeral client for explicitly overridden proxy
+            limits = httpx.Limits(max_connections=10, max_keepalive_connections=5)
+            return httpx.AsyncClient(
+                timeout=settings.REQUEST_TIMEOUT,
+                http2=False,
+                follow_redirects=True,
+                limits=limits,
+                proxy=proxy_override,
+            )
+
         if self._client is None or self._client.is_closed:
             limits = httpx.Limits(
                 max_connections=settings.POOL_MAX_CONNECTIONS,

@@ -261,13 +261,30 @@ def register_openai_connector_routes(mcp):
         cors = get_public_cors_headers(request)
         if request.method == "OPTIONS":
             return Response("", headers=cors)
+
+        proxy_stats = None
+        try:
+            if settings.PROXY_POOL_ENABLED:
+                from youtube_research_mcp.proxy_pool import get_proxy_pool_manager
+                proxy_stats = get_proxy_pool_manager().get_stats()
+        except Exception:
+            pass
+
+        resp_data = {
+            "status": "healthy",
+            "service": settings.PRODUCT_NAME,
+            "legacy_name": settings.MCP_SERVER_NAME,
+            "version": "v2.0.0-2026-09-30-v1",
+        }
+        if proxy_stats:
+            resp_data["proxy_pool"] = {
+                "enabled": proxy_stats.get("enabled", True),
+                "active_proxies": proxy_stats.get("active_proxies_count", 0),
+                "total_requests": proxy_stats.get("stats", {}).get("total_requests", 0),
+            }
+
         return JSONResponse(
-            {
-                "status": "healthy",
-                "service": settings.PRODUCT_NAME,
-                "legacy_name": settings.MCP_SERVER_NAME,
-                "version": "v2.0.0-2026-09-04-v5",
-            },
+            resp_data,
             headers=cors,
         )
 

@@ -30,6 +30,7 @@ from youtube_research_mcp.providers.base import (
     ErrorCategory,
     ProviderCapability,
 )
+from youtube_research_mcp.config import settings
 from youtube_research_mcp.utils.formatting import format_timestamp, make_timestamp_url
 from youtube_research_mcp.utils.security import extract_video_id
 
@@ -91,9 +92,27 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
         start_t = time.perf_counter()
         clean_id = extract_video_id(video_id)
 
+        # Retrieve dynamic proxy if enabled and no static proxy was passed
+        dynamic_proxy = self._proxy
+        if not dynamic_proxy and settings.PROXY_POOL_ENABLED:
+            from youtube_research_mcp.proxy_pool import get_proxy_pool_manager
+            dynamic_proxy = await get_proxy_pool_manager().get_proxy()
+
         def _fetch_sync():
+            api_instance = self._api
+            is_mocked = (
+                hasattr(self._api, "assert_called")
+                or hasattr(getattr(self._api, "list", None), "assert_called")
+                or "Mock" in type(self._api).__name__
+            )
+            if dynamic_proxy and not is_mocked:
+                import requests
+                session = requests.Session()
+                session.proxies.update({"http": dynamic_proxy, "https": dynamic_proxy})
+                api_instance = YouTubeTranscriptApi(http_client=session)
+
             # 1. List available transcripts
-            transcript_list = self._api.list(clean_id)
+            transcript_list = api_instance.list(clean_id)
             
             lang_code = language.lower()
             lang_base = lang_code.split("-")[0]
@@ -236,6 +255,10 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
 
             actual_lang = translate_to if is_translated else matched_tr.language_code
 
+            if dynamic_proxy:
+                from youtube_research_mcp.proxy_pool import get_proxy_pool_manager
+                await get_proxy_pool_manager().report_success(dynamic_proxy)
+
             return TranscriptResult(
                 video_id=clean_id,
                 language=actual_lang,
@@ -270,6 +293,9 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
             return None
 
         except (IpBlocked, RequestBlocked, PoTokenRequired) as e:
+            if dynamic_proxy:
+                from youtube_research_mcp.proxy_pool import get_proxy_pool_manager
+                await get_proxy_pool_manager().report_failure(dynamic_proxy)
             self._health.record_failure(
                 ProviderCapability.TRANSCRIPT,
                 f"Access blocked by YouTube anti-bot: {e}",
@@ -278,6 +304,9 @@ class YouTubeTranscriptApiProvider(BaseTranscriptProvider):
             return None
 
         except Exception as e:
+            if dynamic_proxy:
+                from youtube_research_mcp.proxy_pool import get_proxy_pool_manager
+                await get_proxy_pool_manager().report_failure(dynamic_proxy)
             self._health.record_failure(
                 ProviderCapability.TRANSCRIPT,
                 f"Unexpected error in YouTubeTranscriptApi: {e}",

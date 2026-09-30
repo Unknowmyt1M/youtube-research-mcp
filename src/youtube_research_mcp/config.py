@@ -127,6 +127,8 @@ class Settings(BaseSettings):
 
     # HTTP & Connection Pooling / Proxy Tiers
     YOUTUBE_PROXY_ENABLED: bool = False
+    PROXY_POOL_ENABLED: bool = True
+    PROXY_POOL_REFRESH_INTERVAL: int = 900
     RESIDENTIAL_PROXY_URL: Optional[str] = None
     HTTP_PROXY: Optional[str] = None
     HTTPS_PROXY: Optional[str] = None

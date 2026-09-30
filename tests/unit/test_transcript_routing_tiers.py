@@ -214,6 +214,7 @@ async def test_supadata_multi_key_failover():
     import httpx
 
     with patch.object(settings, "SUPADATA_API_KEY", "key_1_exhausted"), \
+         patch.object(settings, "SUPADATA_API_KEYS", None), \
          patch.object(settings, "SUPADATA_API_KEY_SECONDARY", "mock_key_2_valid"), \
          patch.object(settings, "SUPADATA_API_KEY_TERTIARY", "mock_key_3_valid"):
 

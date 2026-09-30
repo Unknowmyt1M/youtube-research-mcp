@@ -23,7 +23,7 @@ logger = logging.getLogger(settings.MCP_SERVER_NAME)
 
 @asynccontextmanager
 async def server_lifespan(server: FastMCP):
-    """Manage server startup and graceful connection pool shutdown."""
+    """Manage server startup, proxy pool background refresher, and graceful connection pool shutdown."""
     cache = get_cache()
     # Purge expired cache entries on startup
     try:
@@ -32,7 +32,23 @@ async def server_lifespan(server: FastMCP):
     except Exception:
         pass
 
+    # Start ProxyPool background refresher daemon if enabled
+    try:
+        from youtube_research_mcp.proxy_pool import get_proxy_pool_manager
+        proxy_mgr = get_proxy_pool_manager()
+        await proxy_mgr.start_background_refresher()
+    except Exception as e:
+        logger.warning(f"Could not initialize ProxyPool background worker: {e}")
+
     yield
+
+    # Stop ProxyPool background refresher
+    try:
+        from youtube_research_mcp.proxy_pool import get_proxy_pool_manager
+        proxy_mgr = get_proxy_pool_manager()
+        await proxy_mgr.stop()
+    except Exception:
+        pass
 
     # Clean up router and provider connection pools
     router = get_router()
