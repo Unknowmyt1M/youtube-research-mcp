@@ -57,8 +57,9 @@ class ProxyValidator:
                 )
                 if resp.status_code == 200:
                     data = resp.json()
-                    # Check if YouTube returned actual player response (not a captcha/block screen)
-                    if "playabilityStatus" in data or "streamingData" in data or "videoDetails" in data:
+                    status = data.get("playabilityStatus", {}).get("status", "")
+                    # Check if YouTube returned actual playable response (not a captcha/login/block screen)
+                    if status == "OK" or ("streamingData" in data and status != "LOGIN_REQUIRED"):
                         latency = time.perf_counter() - start_t
                         return round(latency, 3)
         except Exception:

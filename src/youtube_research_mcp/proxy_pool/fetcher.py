@@ -33,6 +33,14 @@ class ProxyFetcher:
                     m = PROXY_PATTERN.search(line)
                     if m:
                         ip, port = m.group(1), m.group(2)
+                        import ipaddress
+                        try:
+                            ip_obj = ipaddress.ip_address(ip)
+                            if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_reserved or ip_obj.is_link_local:
+                                continue
+                        except ValueError:
+                            continue
+
                         # Normalize into standard proxy URL format
                         if line.startswith("socks5://") or is_socks5:
                             results.append(f"socks5://{ip}:{port}")
